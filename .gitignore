@@ -89,3 +89,9 @@ npm-debug.log
 # OS files
 Thumbs.db
 .DS_Store
+
+# Large data files
+import/
+backups/
+media/
+staticfiles/
