@@ -1,0 +1,243 @@
+{% extends 'hospital/base.html' %}
+{% load humanize %}
+
+{% block title %}Cashier Session{% endblock %}
+{% block page_title %}Cashier Session{% endblock %}
+{% block page_subtitle %}Track live totals and reconcile{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Cashier Session</h2>
+            <p class="text-muted mb-0">
+                Session {{ session.session_number }} • Opened {{ session.opened_at|date:"M d, H:i" }}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'hospital:cashier_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-speedometer2 me-1"></i> Dashboard
+            </a>
+            {% if session.status == 'closed' %}
+                <a href="{% url 'hospital:cashier_session_print' session.id %}" class="btn btn-success">
+                    <i class="bi bi-printer-fill me-1"></i> Print Report
+                </a>
+            {% else %}
+                <a href="{% url 'hospital:update_session_notes' session.id %}?redirect=detail" class="btn btn-info">
+                    <i class="bi bi-pencil me-1"></i> Update Notes
+                </a>
+                <a href="{% url 'hospital:close_session' session.id %}" class="btn btn-danger">
+                    <i class="bi bi-lock me-1"></i> Close Session
+                </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <p class="text-muted text-uppercase small mb-1">Opening Cash</p>
+                    <h3 class="mb-0">GHS {{ session.opening_cash|floatformat:2|intcomma }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <p class="text-muted text-uppercase small mb-1">Total Payments</p>
+                    <h3 class="mb-0 text-success">GHS {{ session.total_payments|floatformat:2|intcomma }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <p class="text-muted text-uppercase small mb-1">Expected Cash</p>
+                    <h3 class="mb-0 text-primary">GHS {{ session.expected_cash|floatformat:2|intcomma }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <p class="text-muted text-uppercase small mb-1">Transactions Today</p>
+                    <h3 class="mb-0">{{ session.total_transactions }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Cash Sales Notes Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>Daily Cash Sales Notes</h5>
+                    <a href="{% url 'hospital:update_session_notes' session.id %}?redirect=detail" class="btn btn-light btn-sm">
+                        <i class="bi bi-pencil me-1"></i> Update Notes
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% if session.daily_cash_notes %}
+                        <div class="alert alert-info mb-0">
+                            <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">{{ session.daily_cash_notes }}</pre>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-warning mb-0">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>No notes yet.</strong> Click "Update Notes" to add notes matching your cash sales throughout the day.
+                        </div>
+                    {% endif %}
+                    {% if session.notes %}
+                    <div class="mt-3">
+                        <small class="text-muted"><strong>Session Notes:</strong></small>
+                        <p class="mb-0 text-muted">{{ session.notes|truncatewords:30 }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sales by Payment Method - Reconcile & Rectify -->
+    {% if receipts_by_method %}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-wallet2 me-2"></i>Sales by Payment Method – Reconcile & Rectify</h5>
+            <span class="badge bg-light text-dark">{{ today|date:"M d, Y" }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% for method, data in receipts_by_method.items %}
+            <div class="border-bottom border-light">
+                <div class="p-3 d-flex justify-content-between align-items-center" style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#session-collapse-{{ method }}" aria-expanded="true">
+                    <div class="d-flex align-items-center gap-3">
+                        {% if method == 'cash' %}
+                        <span class="badge bg-success"><i class="bi bi-cash-coin"></i> Cash</span>
+                        {% elif method == 'card' %}
+                        <span class="badge bg-primary"><i class="bi bi-credit-card"></i> Card</span>
+                        {% elif method == 'mobile_money' %}
+                        <span class="badge bg-warning text-dark"><i class="bi bi-phone"></i> MoMo</span>
+                        {% elif method == 'deposit' %}
+                        <span class="badge bg-info"><i class="bi bi-wallet2"></i> Deposit</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ data.label }}</span>
+                        {% endif %}
+                        <span class="text-muted small">{{ data.count }} sale{{ data.count|pluralize }}</span>
+                    </div>
+                    <strong class="text-success">GHS {{ data.total|floatformat:2|intcomma }}</strong>
+                </div>
+                <div class="collapse show" id="session-collapse-{{ method }}">
+                    {% if data.receipts %}
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Receipt</th><th>Time</th><th>Patient</th><th>Amount</th><th>Ref</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for receipt in data.receipts %}
+                            <tr>
+                                <td><strong>{{ receipt.receipt_number }}</strong></td>
+                                <td>{{ receipt.receipt_date|date:"h:i A" }}</td>
+                                <td>{% if receipt.patient %}{{ receipt.patient.full_name }}{% else %}Prescribe{% endif %}</td>
+                                <td><strong>GHS {{ receipt.amount_paid|floatformat:2 }}</strong></td>
+                                <td><small>{% if receipt.transaction %}{{ receipt.transaction.reference_number|default:"—" }}{% else %}—{% endif %}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row g-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Transactions in this session</h5>
+                    <span class="badge bg-primary">{{ recent_transactions|length }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for txn in recent_transactions %}
+                                <tr>
+                                    <td>{{ txn.transaction_date|date:"H:i" }}</td>
+                                    <td class="text-capitalize">{{ txn.get_transaction_type_display }}</td>
+                                    <td>
+                                        {% if txn.transaction_type == 'refund_issued' %}
+                                            <span class="text-danger">- GHS {{ txn.amount|floatformat:2|intcomma }}</span>
+                                        {% else %}
+                                            <span class="text-success">GHS {{ txn.amount|floatformat:2|intcomma }}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">No transactions in this session yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Receipts issued in this session</h5>
+                    <span class="badge bg-success">{{ recent_receipts|length }}</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Patient</th>
+                                    <th>Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for receipt in recent_receipts %}
+                                <tr>
+                                    <td>{{ receipt.receipt_date|date:"H:i" }}</td>
+                                    <td>
+                                        {% if receipt.patient %}
+                                            {{ receipt.patient.full_name }}
+                                        {% else %}
+                                            Prescribe Customer
+                                        {% endif %}
+                                        <div class="text-muted small">{{ receipt.receipt_number }}</div>
+                                    </td>
+                                    <td class="text-success fw-semibold">
+                                        GHS {{ receipt.amount_paid|floatformat:2|intcomma }}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="text-center text-muted py-4">No receipts issued in this session yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

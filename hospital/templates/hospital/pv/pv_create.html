@@ -1,0 +1,417 @@
+{% extends 'hospital/base.html' %}
+{% load static %}
+
+{% block title %}Create Payment Voucher{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h4 class="mb-0"><i class="bi bi-receipt-cutoff me-2"></i>Create Payment Voucher</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="pvForm">
+                        {% csrf_token %}
+                        
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Voucher Date <span class="text-danger">*</span></label>
+                                {{ form.voucher_date }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Payment Type <span class="text-danger">*</span></label>
+                                {{ form.payment_type }}
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-8">
+                                <label class="form-label">Payee Name <span class="text-danger">*</span></label>
+                                {{ form.payee_name }}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Payee Type</label>
+                                {{ form.payee_type }}
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">Description <span class="text-danger">*</span></label>
+                            {{ form.description }}
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Amount <span class="text-danger">*</span></label>
+                                {{ form.amount }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Payment Method <span class="text-danger">*</span></label>
+                                {{ form.payment_method }}
+                            </div>
+                        </div>
+
+                        <!-- Cheque Details (shown when payment method is cheque) -->
+                        <div id="chequeDetails" class="d-none mb-4 p-3 bg-light rounded">
+                            <h6 class="mb-3"><i class="bi bi-bank me-2"></i>Cheque Details</h6>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="createCheque" name="create_cheque" value="yes">
+                                <label class="form-check-label" for="createCheque">
+                                    Create Cheque for this Payment Voucher
+                                </label>
+                            </div>
+                            <div id="chequeFields" class="d-none">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Cheque Number <span class="text-danger">*</span></label>
+                                        <input type="text" name="cheque_number" class="form-control" placeholder="Enter cheque number" title="Enter text" placeholder="Enter text">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Cheque Date <span class="text-danger">*</span></label>
+                                        <input type="date" name="cheque_date" class="form-control">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Bank Account <span class="text-danger">*</span></label>
+                                        <select name="bank_account" class="form-select" title="Select option" aria-label="Select option">
+                                            <option value="">Select Bank Account</option>
+                                            {% for bank in bank_accounts %}
+                                            <option value="{{ bank.id }}">{{ bank.account_name }} - {{ bank.account_number }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Bank Details (for bank transfer) -->
+                        <div id="bankDetails" class="d-none mb-4">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">Bank Name</label>
+                                    {{ form.bank_name }}
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Account Number</label>
+                                    {{ form.account_number }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Accounting Accounts Section -->
+                        <div class="mb-4 p-4 bg-gradient-light rounded border border-primary" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0"><i class="bi bi-calculator me-2 text-primary"></i><strong>Accounting Accounts</strong> <span class="text-danger">*</span></h6>
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#accountSelectorModal">
+                                    <i class="bi bi-search me-1"></i> Browse Accounts
+                                </button>
+                            </div>
+                            <p class="text-muted small mb-3">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Select accounts for proper debit/credit accounting.
+                                <strong>Debit:</strong> Expense Account (where expense is recorded) | 
+                                <strong>Credit:</strong> Payment Account (cash/bank account being used for payment)
+                            </p>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">
+                                        <i class="bi bi-arrow-down-circle text-danger me-1"></i>Expense Account (Debit) <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="input-group">
+                                        {{ form.expense_account }}
+                                        <button type="button" class="btn btn-outline-secondary" onclick="openAccountSelector('expense')" title="Browse accounts">
+                                            <i class="bi bi-list-ul"></i>
+                                        </button>
+                                    </div>
+                                    <small class="form-text text-muted">
+                                        <i class="bi bi-info-circle"></i> Account to debit (expense category)
+                                    </small>
+                                    <div id="expense-account-display" class="mt-2 p-2 bg-white rounded border d-none">
+                                        <small class="text-muted">Selected: <span id="expense-account-name"></span></small>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">
+                                        <i class="bi bi-arrow-up-circle text-success me-1"></i>Payment Account (Credit) <span class="text-danger">*</span>
+                                    </label>
+                                    <div class="input-group">
+                                        {{ form.payment_account }}
+                                        <button type="button" class="btn btn-outline-secondary" onclick="openAccountSelector('payment')" title="Browse accounts">
+                                            <i class="bi bi-list-ul"></i>
+                                        </button>
+                                    </div>
+                                    <small class="form-text text-muted">
+                                        <i class="bi bi-info-circle"></i> Account to credit (cash/bank being used)
+                                    </small>
+                                    <div id="payment-account-display" class="mt-2 p-2 bg-white rounded border d-none">
+                                        <small class="text-muted">Selected: <span id="payment-account-name"></span></small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-3 d-flex gap-2">
+                                <a href="{% url 'hospital:accountant_chart_of_accounts' %}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-list-ul"></i> View Full Chart of Accounts
+                                </a>
+                                <button type="button" class="btn btn-sm btn-outline-info" onclick="showAccountHelp()">
+                                    <i class="bi bi-question-circle"></i> Help
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Invoice Number</label>
+                                {{ form.invoice_number }}
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">PO Number</label>
+                                {{ form.po_number }}
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label">Notes</label>
+                            {{ form.notes }}
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'hospital:pv_list' %}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-2"></i>Create Payment Voucher
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const paymentMethod = document.getElementById('id_payment_method');
+    const chequeDetails = document.getElementById('chequeDetails');
+    const bankDetails = document.getElementById('bankDetails');
+    const createCheque = document.getElementById('createCheque');
+    const chequeFields = document.getElementById('chequeFields');
+
+    function togglePaymentDetails() {
+        const method = paymentMethod.value;
+        
+        if (method === 'cheque') {
+            chequeDetails.style.display = 'block';
+            bankDetails.style.display = 'none';
+        } else if (method === 'bank_transfer') {
+            chequeDetails.style.display = 'none';
+            bankDetails.style.display = 'block';
+        } else {
+            chequeDetails.style.display = 'none';
+            bankDetails.style.display = 'none';
+        }
+    }
+
+    paymentMethod.addEventListener('change', togglePaymentDetails);
+    togglePaymentDetails();
+
+    createCheque.addEventListener('change', function() {
+        if (this.checked) {
+            chequeFields.style.display = 'block';
+            chequeFields.querySelectorAll('input, select').forEach(field => {
+                field.required = true;
+            });
+        } else {
+            chequeFields.style.display = 'none';
+            chequeFields.querySelectorAll('input, select').forEach(field => {
+                field.required = false;
+                field.value = '';
+            });
+        }
+    });
+    
+    // Update account display when selection changes
+    const expenseAccountSelect = document.getElementById('id_expense_account');
+    const paymentAccountSelect = document.getElementById('id_payment_account');
+    
+    if (expenseAccountSelect) {
+        expenseAccountSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (selectedOption.value) {
+                document.getElementById('expense-account-display').style.display = 'block';
+                document.getElementById('expense-account-name').textContent = selectedOption.text;
+            } else {
+                document.getElementById('expense-account-display').style.display = 'none';
+            }
+        });
+    }
+    
+    if (paymentAccountSelect) {
+        paymentAccountSelect.addEventListener('change', function() {
+            const selectedOption = this.options[this.selectedIndex];
+            if (selectedOption.value) {
+                document.getElementById('payment-account-display').style.display = 'block';
+                document.getElementById('payment-account-name').textContent = selectedOption.text;
+            } else {
+                document.getElementById('payment-account-display').style.display = 'none';
+            }
+        });
+    }
+});
+
+function openAccountSelector(type) {
+    // Open modal and filter by account type
+    const modal = new bootstrap.Modal(document.getElementById('accountSelectorModal'));
+    const accountTypeFilter = document.getElementById('accountTypeFilter');
+    
+    if (type === 'expense') {
+        accountTypeFilter.value = 'expense';
+    } else if (type === 'payment') {
+        accountTypeFilter.value = 'asset';
+    }
+    
+    filterAccounts();
+    modal.show();
+}
+
+function showAccountHelp() {
+    alert('Account Selection Help:\n\n' +
+          '• Expense Account (Debit): Select the expense category account\n' +
+          '  Examples: Operating Expenses, Supplier Payments, Utilities\n\n' +
+          '• Payment Account (Credit): Select the cash/bank account being used\n' +
+          '  Examples: Cash Account, Main Bank Account, Petty Cash\n\n' +
+          '• Click "Browse Accounts" to search and select from the full chart\n' +
+          '• Use the search box to quickly find accounts by code or name');
+}
+
+function filterAccounts() {
+    const searchTerm = document.getElementById('accountSearch').value.toLowerCase();
+    const accountType = document.getElementById('accountTypeFilter').value;
+    const accountList = document.getElementById('accountList');
+    const accounts = accountList.querySelectorAll('.account-item');
+    
+    accounts.forEach(account => {
+        const accountText = account.textContent.toLowerCase();
+        const accountTypeAttr = account.getAttribute('data-account-type');
+        
+        const matchesSearch = !searchTerm || accountText.includes(searchTerm);
+        const matchesType = !accountType || accountTypeAttr === accountType;
+        
+        if (matchesSearch && matchesType) {
+            account.style.display = 'block';
+        } else {
+            account.style.display = 'none';
+        }
+    });
+}
+
+function selectAccount(accountId, accountCode, accountName, accountType, targetField) {
+    // Set the selected account in the form
+    const targetSelect = document.getElementById('id_' + targetField + '_account');
+    if (targetSelect) {
+        targetSelect.value = accountId;
+        
+        // Trigger change event to update display
+        const event = new Event('change', { bubbles: true });
+        targetSelect.dispatchEvent(event);
+    }
+    
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('accountSelectorModal'));
+    if (modal) {
+        modal.hide();
+    }
+}
+</script>
+
+<!-- Account Selector Modal -->
+<div class="modal fade" id="accountSelectorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-list-ul me-2"></i>Select Account from Chart of Accounts
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="row g-2">
+                        <div class="col-md-6">
+                            <input type="text" id="accountSearch" class="form-control" 
+                                   placeholder="Search by code or name..." 
+                                   onkeyup="filterAccounts()" title="Enter text" placeholder="Enter text">
+                        </div>
+                        <div class="col-md-6">
+                            <select id="accountTypeFilter" class="form-select" onchange="filterAccounts()" title="Select option" aria-label="Select option">
+                                <option value="">All Account Types</option>
+                                <option value="asset">Assets</option>
+                                <option value="liability">Liabilities</option>
+                                <option value="equity">Equity</option>
+                                <option value="revenue">Revenue</option>
+                                <option value="expense">Expenses</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="border rounded p-2" style="max-height: 400px; overflow-y: auto;">
+                    <div id="accountList">
+                        {% for account in expense_accounts %}
+                        <div class="account-item p-2 border-bottom cursor-pointer" 
+                             data-account-type="expense"
+                             onclick="selectAccount('{{ account.id }}', '{{ account.account_code }}', '{{ account.account_name }}', 'expense', 'expense')"
+                             style="cursor: pointer; transition: background 0.2s;"
+                             onmouseover="this.style.background='#f0f0f0'"
+                             onmouseout="this.style.background='white'">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong class="text-primary">{{ account.account_code }}</strong>
+                                    <span class="ms-2">{{ account.account_name }}</span>
+                                </div>
+                                <span class="badge bg-danger">Expense</span>
+                            </div>
+                            {% if account.description %}
+                            <small class="text-muted">{{ account.description }}</small>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        {% for account in payment_accounts %}
+                        <div class="account-item p-2 border-bottom cursor-pointer" 
+                             data-account-type="asset"
+                             onclick="selectAccount('{{ account.id }}', '{{ account.account_code }}', '{{ account.account_name }}', 'asset', 'payment')"
+                             style="cursor: pointer; transition: background 0.2s;"
+                             onmouseover="this.style.background='#f0f0f0'"
+                             onmouseout="this.style.background='white'">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong class="text-success">{{ account.account_code }}</strong>
+                                    <span class="ms-2">{{ account.account_name }}</span>
+                                </div>
+                                <span class="badge bg-success">Asset</span>
+                            </div>
+                            {% if account.description %}
+                            <small class="text-muted">{{ account.description }}</small>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="mt-3 alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Tip:</strong> Click on any account to select it. Use search and filters to find accounts quickly.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="{% url 'hospital:accountant_chart_of_accounts' %}" target="_blank" class="btn btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>View Full Chart
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

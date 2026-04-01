@@ -1,0 +1,1068 @@
+{% extends 'hospital/base.html' %}
+{% load humanize static hospital_extras %}
+{% load math_filters %}
+
+{% block title %}Dental Consultation - {{ patient.full_name|default:"New Patient" }}{% endblock %}
+
+{% block page_title %}Dental Consultation{% endblock %}
+{% block page_subtitle %}{% if patient %}{{ patient.full_name }} (MRN: {{ patient.mrn }}){% else %}Select a patient{% endif %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Modern Dental Chart Container */
+    .dental-chart-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 24px;
+        padding: 40px;
+        margin-bottom: 32px;
+        box-shadow: 0 20px 60px rgba(102, 126, 234, 0.4);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .dental-chart-container::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: rotate 20s linear infinite;
+    }
+    
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    
+    .chart-inner {
+        background: white;
+        border-radius: 20px;
+        padding: 32px;
+        position: relative;
+        z-index: 1;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    }
+    
+    /* Modern SVG Chart */
+    .dental-arch-chart {
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        display: block;
+        filter: drop-shadow(0 4px 6px rgba(0,0,0,0.05));
+    }
+    
+    /* Tooth Styling */
+    .tooth {
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        stroke-width: 2.5;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+    }
+    
+    .tooth:hover {
+        stroke-width: 4;
+        filter: drop-shadow(0 6px 12px rgba(0,0,0,0.15));
+        transform: scale(1.05);
+    }
+    
+    .tooth.selected {
+        stroke: #667eea;
+        stroke-width: 5;
+        filter: drop-shadow(0 0 12px rgba(102, 126, 234, 0.8));
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.08); }
+    }
+    
+    /* Modern Color Scheme for Conditions */
+    .tooth.healthy { 
+        fill: #ffffff; 
+        stroke: #10b981; 
+    }
+    .tooth.carious { 
+        fill: #fee2e2; 
+        stroke: #ef4444; 
+    }
+    .tooth.filled { 
+        fill: #dbeafe; 
+        stroke: #3b82f6; 
+    }
+    .tooth.missing { 
+        fill: #f3f4f6; 
+        stroke: #9ca3af; 
+        opacity: 0.3; 
+        stroke-dasharray: 5,5;
+    }
+    .tooth.crown { 
+        fill: #fef3c7; 
+        stroke: #f59e0b; 
+    }
+    .tooth.bridge { 
+        fill: #f3e8ff; 
+        stroke: #a855f7; 
+    }
+    .tooth.implant { 
+        fill: #d1fae5; 
+        stroke: #059669; 
+    }
+    .tooth.root_canal { 
+        fill: #fed7aa; 
+        stroke: #ea580c; 
+    }
+    .tooth.extraction_needed { 
+        fill: #fecaca; 
+        stroke: #dc2626;
+        animation: blink 1.5s infinite;
+    }
+    .tooth.erupting { 
+        fill: #e0f2fe; 
+        stroke: #0ea5e9; 
+        stroke-dasharray: 3,3;
+    }
+    .tooth.impacted { 
+        fill: #ffedd5; 
+        stroke: #f97316; 
+    }
+    .tooth.deciduous { 
+        fill: #fce7f3; 
+        stroke: #ec4899; 
+    }
+    
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    /* Tooth Labels */
+    .tooth-label {
+        font-size: 13px;
+        font-weight: 700;
+        text-anchor: middle;
+        dominant-baseline: middle;
+        fill: #1f2937;
+        pointer-events: none;
+        font-family: 'Inter', -apple-system, sans-serif;
+    }
+    
+    .tooth-fdi {
+        font-size: 10px;
+        font-weight: 600;
+        fill: #6b7280;
+        text-anchor: middle;
+        pointer-events: none;
+    }
+    
+    /* Arch Lines */
+    .arch-line {
+        fill: none;
+        stroke: #e5e7eb;
+        stroke-width: 2;
+        stroke-dasharray: 8,4;
+        opacity: 0.5;
+    }
+    
+    /* Legend */
+    .condition-legend {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        padding: 24px;
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-radius: 16px;
+        margin-top: 24px;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+    }
+    
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: white;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .legend-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .legend-color {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        border: 2.5px solid;
+        flex-shrink: 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .legend-text {
+        font-size: 13px;
+        font-weight: 600;
+        color: #374151;
+        white-space: nowrap;
+    }
+    
+    /* Toolbar */
+    .dental-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    
+    .toolbar-title {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1f2937;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    
+    .toolbar-title i {
+        color: #667eea;
+        font-size: 28px;
+    }
+    
+    .toolbar-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+    
+    .condition-selector {
+        padding: 10px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+        background: white;
+        transition: all 0.2s ease;
+        min-width: 200px;
+        cursor: pointer;
+    }
+    
+    .condition-selector:hover {
+        border-color: #667eea;
+    }
+    
+    .condition-selector:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .btn-clear {
+        padding: 10px 20px;
+        border: 2px solid #ef4444;
+        background: white;
+        color: #ef4444;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .btn-clear:hover {
+        background: #ef4444;
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+    }
+    
+    /* Tooth Info Panel */
+    .tooth-info-panel {
+        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+        border-radius: 16px;
+        padding: 24px;
+        margin-top: 24px;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+    
+    .tooth-info-panel.active {
+        display: block;
+        animation: slideIn 0.3s ease;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Procedure Tabs */
+    .procedure-tabs {
+        border-bottom: 2px solid #e5e7eb;
+        margin-bottom: 24px;
+        display: flex;
+        gap: 8px;
+    }
+    
+    .procedure-tab {
+        padding: 12px 24px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        font-weight: 600;
+        color: #6b7280;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s ease;
+        border-radius: 8px 8px 0 0;
+        font-size: 14px;
+    }
+    
+    .procedure-tab.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        background: rgba(102, 126, 234, 0.05);
+    }
+    
+    .procedure-tab:hover:not(.active) {
+        color: #374151;
+        background: rgba(0, 0, 0, 0.02);
+    }
+    
+    .procedure-item {
+        padding: 20px;
+        border-bottom: 1px solid #e5e7eb;
+        transition: all 0.2s ease;
+        border-radius: 12px;
+        margin-bottom: 8px;
+    }
+    
+    .procedure-item:hover {
+        background: rgba(102, 126, 234, 0.03);
+        transform: translateX(4px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .dental-chart-container {
+            padding: 20px;
+        }
+        
+        .chart-inner {
+            padding: 16px;
+        }
+        
+        .condition-legend {
+            grid-template-columns: 1fr;
+        }
+        
+        .toolbar-title {
+            font-size: 20px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% if patient %}
+<div class="row g-4 mb-4">
+    <!-- Patient Info Card -->
+    <div class="col-md-4">
+        <div class="modern-card">
+            <h6 style="font-weight: 600; margin-bottom: 16px; color: var(--dark);">
+                <i class="bi bi-person-circle"></i> Patient Information
+            </h6>
+            <div style="margin-bottom: 12px;">
+                <strong>Name:</strong> {{ patient.full_name }}<br>
+                <strong>MRN:</strong> {{ patient.mrn }}<br>
+                <strong>Age:</strong> {{ patient.age }} years<br>
+                <strong>Gender:</strong> {{ patient.get_gender_display }}
+            </div>
+            {% if patient.allergies %}
+            <div class="alert alert-warning" style="padding: 8px; margin-bottom: 8px; font-size: 12px;">
+                <strong>Allergies:</strong> {{ patient.allergies }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-md-8">
+        <div class="modern-card">
+            <h6 style="font-weight: 600; margin-bottom: 16px; color: var(--dark);">
+                <i class="bi bi-tools"></i> Quick Actions
+            </h6>
+            <div class="d-flex gap-2 flex-wrap">
+                <button class="btn btn-primary-modern btn-modern" onclick="showAddProcedureModal()">
+                    <i class="bi bi-plus-circle"></i> Add Procedure
+                </button>
+                <a href="{% url 'hospital:patient_detail' patient.pk %}" class="btn btn-outline-primary btn-modern">
+                    <i class="bi bi-person"></i> View Patient
+                </a>
+                {% if encounter %}
+                <a href="{% url 'hospital:encounter_detail' encounter.pk %}" class="btn btn-outline-primary btn-modern">
+                    <i class="bi bi-heart-pulse"></i> View Encounter
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modern Dental Chart -->
+{% if dental_chart %}
+<div class="dental-chart-container">
+    <div class="chart-inner">
+        <!-- Toolbar -->
+        <div class="dental-toolbar">
+            <div class="toolbar-title">
+                <i class="bi bi-tooth-fill"></i>
+                <span>Interactive Dental Chart</span>
+                <span style="font-size: 14px; color: #6b7280; font-weight: 500;">{{ dental_chart.chart_date|date:"F d, Y" }}</span>
+            </div>
+            <div class="toolbar-actions">
+                <select id="conditionTypeSelector" class="condition-selector" title="Select option" aria-label="Select option">
+                    <option value="">Select Condition...</option>
+                    {% for value, label in condition_types %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn-clear" onclick="clearSelection()">
+                    <i class="bi bi-x-circle-fill"></i>
+                    Clear Selection
+                </button>
+            </div>
+        </div>
+        
+        <!-- Modern Unified Dental Arch Chart -->
+        <svg class="dental-arch-chart" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet">
+            <defs>
+                <!-- Gradients for depth -->
+                <linearGradient id="toothGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#f3f4f6;stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            
+            <!-- Upper Arch Guide Line -->
+            <path class="arch-line" d="M 200,350 Q 800,200 1400,350" stroke-width="2"/>
+            
+            <!-- Lower Arch Guide Line -->
+            <path class="arch-line" d="M 200,550 Q 800,700 1400,550" stroke-width="2"/>
+            
+            <!-- UPPER JAW -->
+            <!-- Upper Right Quadrant: FDI 18-11 → Sequential 1-8 -->
+            <g id="tooth1" class="tooth-group" data-tooth="1" data-fdi="18" onclick="selectTooth('1')">
+                <rect class="tooth {{ tooth_conditions_map.1|default:'healthy' }}" x="180" y="320" width="50" height="70" rx="8" />
+                <text class="tooth-label" x="205" y="360">1</text>
+                <text class="tooth-fdi" x="205" y="375">18</text>
+            </g>
+            <g id="tooth2" class="tooth-group" data-tooth="2" data-fdi="17" onclick="selectTooth('2')">
+                <rect class="tooth {{ tooth_conditions_map.2|default:'healthy' }}" x="250" y="310" width="50" height="65" rx="8" />
+                <text class="tooth-label" x="275" y="347">2</text>
+                <text class="tooth-fdi" x="275" y="362">17</text>
+            </g>
+            <g id="tooth3" class="tooth-group" data-tooth="3" data-fdi="16" onclick="selectTooth('3')">
+                <rect class="tooth {{ tooth_conditions_map.3|default:'healthy' }}" x="320" y="300" width="48" height="62" rx="8" />
+                <text class="tooth-label" x="344" y="335">3</text>
+                <text class="tooth-fdi" x="344" y="350">16</text>
+            </g>
+            <g id="tooth4" class="tooth-group" data-tooth="4" data-fdi="15" onclick="selectTooth('4')">
+                <rect class="tooth {{ tooth_conditions_map.4|default:'healthy' }}" x="388" y="290" width="48" height="60" rx="8" />
+                <text class="tooth-label" x="412" y="324">4</text>
+                <text class="tooth-fdi" x="412" y="339">15</text>
+            </g>
+            <g id="tooth5" class="tooth-group" data-tooth="5" data-fdi="14" onclick="selectTooth('5')">
+                <rect class="tooth {{ tooth_conditions_map.5|default:'healthy' }}" x="456" y="280" width="46" height="58" rx="8" />
+                <text class="tooth-label" x="479" y="313">5</text>
+                <text class="tooth-fdi" x="479" y="328">14</text>
+            </g>
+            <g id="tooth6" class="tooth-group" data-tooth="6" data-fdi="13" onclick="selectTooth('6')">
+                <polygon class="tooth {{ tooth_conditions_map.6|default:'healthy' }}" points="522,270 547,270 555,285 555,320 545,335 524,335 514,320 514,285" />
+                <text class="tooth-label" x="534.5" y="307">6</text>
+                <text class="tooth-fdi" x="534.5" y="322">13</text>
+            </g>
+            <g id="tooth7" class="tooth-group" data-tooth="7" data-fdi="12" onclick="selectTooth('7')">
+                <rect class="tooth {{ tooth_conditions_map.7|default:'healthy' }}" x="575" y="265" width="40" height="58" rx="6" />
+                <text class="tooth-label" x="595" y="298">7</text>
+                <text class="tooth-fdi" x="595" y="313">12</text>
+            </g>
+            <g id="tooth8" class="tooth-group" data-tooth="8" data-fdi="11" onclick="selectTooth('8')">
+                <rect class="tooth {{ tooth_conditions_map.8|default:'healthy' }}" x="635" y="260" width="42" height="60" rx="6" />
+                <text class="tooth-label" x="656" y="294">8</text>
+                <text class="tooth-fdi" x="656" y="309">11</text>
+            </g>
+            
+            <!-- Upper Left Quadrant: FDI 21-28 → Sequential 9-16 -->
+            <g id="tooth9" class="tooth-group" data-tooth="9" data-fdi="21" onclick="selectTooth('9')">
+                <rect class="tooth {{ tooth_conditions_map.9|default:'healthy' }}" x="723" y="260" width="42" height="60" rx="6" />
+                <text class="tooth-label" x="744" y="294">9</text>
+                <text class="tooth-fdi" x="744" y="309">21</text>
+            </g>
+            <g id="tooth10" class="tooth-group" data-tooth="10" data-fdi="22" onclick="selectTooth('10')">
+                <rect class="tooth {{ tooth_conditions_map.10|default:'healthy' }}" x="785" y="265" width="40" height="58" rx="6" />
+                <text class="tooth-label" x="805" y="298">10</text>
+                <text class="tooth-fdi" x="805" y="313">22</text>
+            </g>
+            <g id="tooth11" class="tooth-group" data-tooth="11" data-fdi="23" onclick="selectTooth('11')">
+                <polygon class="tooth {{ tooth_conditions_map.11|default:'healthy' }}" points="845,270 870,270 880,285 880,320 870,335 849,335 839,320 839,285" />
+                <text class="tooth-label" x="859.5" y="307">11</text>
+                <text class="tooth-fdi" x="859.5" y="322">23</text>
+            </g>
+            <g id="tooth12" class="tooth-group" data-tooth="12" data-fdi="24" onclick="selectTooth('12')">
+                <rect class="tooth {{ tooth_conditions_map.12|default:'healthy' }}" x="898" y="280" width="46" height="58" rx="8" />
+                <text class="tooth-label" x="921" y="313">12</text>
+                <text class="tooth-fdi" x="921" y="328">24</text>
+            </g>
+            <g id="tooth13" class="tooth-group" data-tooth="13" data-fdi="25" onclick="selectTooth('13')">
+                <rect class="tooth {{ tooth_conditions_map.13|default:'healthy' }}" x="964" y="290" width="48" height="60" rx="8" />
+                <text class="tooth-label" x="988" y="324">13</text>
+                <text class="tooth-fdi" x="988" y="339">25</text>
+            </g>
+            <g id="tooth14" class="tooth-group" data-tooth="14" data-fdi="26" onclick="selectTooth('14')">
+                <rect class="tooth {{ tooth_conditions_map.14|default:'healthy' }}" x="1032" y="300" width="48" height="62" rx="8" />
+                <text class="tooth-label" x="1056" y="335">14</text>
+                <text class="tooth-fdi" x="1056" y="350">26</text>
+            </g>
+            <g id="tooth15" class="tooth-group" data-tooth="15" data-fdi="27" onclick="selectTooth('15')">
+                <rect class="tooth {{ tooth_conditions_map.15|default:'healthy' }}" x="1100" y="310" width="50" height="65" rx="8" />
+                <text class="tooth-label" x="1125" y="347">15</text>
+                <text class="tooth-fdi" x="1125" y="362">27</text>
+            </g>
+            <g id="tooth16" class="tooth-group" data-tooth="16" data-fdi="28" onclick="selectTooth('16')">
+                <rect class="tooth {{ tooth_conditions_map.16|default:'healthy' }}" x="1170" y="320" width="50" height="70" rx="8" />
+                <text class="tooth-label" x="1195" y="360">16</text>
+                <text class="tooth-fdi" x="1195" y="375">28</text>
+            </g>
+            
+            <!-- LOWER JAW -->
+            <!-- Lower Left Quadrant: FDI 31-38 → Sequential 17-24 -->
+            <g id="tooth17" class="tooth-group" data-tooth="17" data-fdi="31" onclick="selectTooth('17')">
+                <rect class="tooth {{ tooth_conditions_map.17|default:'healthy' }}" x="723" y="580" width="42" height="60" rx="6" />
+                <text class="tooth-label" x="744" y="614">17</text>
+                <text class="tooth-fdi" x="744" y="629">31</text>
+            </g>
+            <g id="tooth18" class="tooth-group" data-tooth="18" data-fdi="32" onclick="selectTooth('18')">
+                <rect class="tooth {{ tooth_conditions_map.18|default:'healthy' }}" x="785" y="577" width="40" height="58" rx="6" />
+                <text class="tooth-label" x="805" y="610">18</text>
+                <text class="tooth-fdi" x="805" y="625">32</text>
+            </g>
+            <g id="tooth19" class="tooth-group" data-tooth="19" data-fdi="33" onclick="selectTooth('19')">
+                <polygon class="tooth {{ tooth_conditions_map.19|default:'healthy' }}" points="839,565 849,580 849,615 870,615 880,600 880,565 870,550 845,550" />
+                <text class="tooth-label" x="859.5" y="590">19</text>
+                <text class="tooth-fdi" x="859.5" y="605">33</text>
+            </g>
+            <g id="tooth20" class="tooth-group" data-tooth="20" data-fdi="34" onclick="selectTooth('20')">
+                <rect class="tooth {{ tooth_conditions_map.20|default:'healthy' }}" x="898" y="562" width="46" height="58" rx="8" />
+                <text class="tooth-label" x="921" y="595">20</text>
+                <text class="tooth-fdi" x="921" y="610">34</text>
+            </g>
+            <g id="tooth21" class="tooth-group" data-tooth="21" data-fdi="35" onclick="selectTooth('21')">
+                <rect class="tooth {{ tooth_conditions_map.21|default:'healthy' }}" x="964" y="550" width="48" height="60" rx="8" />
+                <text class="tooth-label" x="988" y="584">21</text>
+                <text class="tooth-fdi" x="988" y="599">35</text>
+            </g>
+            <g id="tooth22" class="tooth-group" data-tooth="22" data-fdi="36" onclick="selectTooth('22')">
+                <rect class="tooth {{ tooth_conditions_map.22|default:'healthy' }}" x="1032" y="538" width="48" height="62" rx="8" />
+                <text class="tooth-label" x="1056" y="573">22</text>
+                <text class="tooth-fdi" x="1056" y="588">36</text>
+            </g>
+            <g id="tooth23" class="tooth-group" data-tooth="23" data-fdi="37" onclick="selectTooth('23')">
+                <rect class="tooth {{ tooth_conditions_map.23|default:'healthy' }}" x="1100" y="525" width="50" height="65" rx="8" />
+                <text class="tooth-label" x="1125" y="562">23</text>
+                <text class="tooth-fdi" x="1125" y="577">37</text>
+            </g>
+            <g id="tooth24" class="tooth-group" data-tooth="24" data-fdi="38" onclick="selectTooth('24')">
+                <rect class="tooth {{ tooth_conditions_map.24|default:'healthy' }}" x="1170" y="510" width="50" height="70" rx="8" />
+                <text class="tooth-label" x="1195" y="550">24</text>
+                <text class="tooth-fdi" x="1195" y="565">38</text>
+            </g>
+            
+            <!-- Lower Right Quadrant: FDI 41-48 → Sequential 25-32 -->
+            <g id="tooth25" class="tooth-group" data-tooth="25" data-fdi="41" onclick="selectTooth('25')">
+                <rect class="tooth {{ tooth_conditions_map.25|default:'healthy' }}" x="635" y="580" width="42" height="60" rx="6" />
+                <text class="tooth-label" x="656" y="614">25</text>
+                <text class="tooth-fdi" x="656" y="629">41</text>
+            </g>
+            <g id="tooth26" class="tooth-group" data-tooth="26" data-fdi="42" onclick="selectTooth('26')">
+                <rect class="tooth {{ tooth_conditions_map.26|default:'healthy' }}" x="575" y="577" width="40" height="58" rx="6" />
+                <text class="tooth-label" x="595" y="610">26</text>
+                <text class="tooth-fdi" x="595" y="625">42</text>
+            </g>
+            <g id="tooth27" class="tooth-group" data-tooth="27" data-fdi="43" onclick="selectTooth('27')">
+                <polygon class="tooth {{ tooth_conditions_map.27|default:'healthy' }}" points="514,565 524,580 524,615 545,615 555,600 555,565 547,550 522,550" />
+                <text class="tooth-label" x="534.5" y="590">27</text>
+                <text class="tooth-fdi" x="534.5" y="605">43</text>
+            </g>
+            <g id="tooth28" class="tooth-group" data-tooth="28" data-fdi="44" onclick="selectTooth('28')">
+                <rect class="tooth {{ tooth_conditions_map.28|default:'healthy' }}" x="456" y="562" width="46" height="58" rx="8" />
+                <text class="tooth-label" x="479" y="595">28</text>
+                <text class="tooth-fdi" x="479" y="610">44</text>
+            </g>
+            <g id="tooth29" class="tooth-group" data-tooth="29" data-fdi="45" onclick="selectTooth('29')">
+                <rect class="tooth {{ tooth_conditions_map.29|default:'healthy' }}" x="388" y="550" width="48" height="60" rx="8" />
+                <text class="tooth-label" x="412" y="584">29</text>
+                <text class="tooth-fdi" x="412" y="599">45</text>
+            </g>
+            <g id="tooth30" class="tooth-group" data-tooth="30" data-fdi="46" onclick="selectTooth('30')">
+                <rect class="tooth {{ tooth_conditions_map.30|default:'healthy' }}" x="320" y="538" width="48" height="62" rx="8" />
+                <text class="tooth-label" x="344" y="573">30</text>
+                <text class="tooth-fdi" x="344" y="588">46</text>
+            </g>
+            <g id="tooth31" class="tooth-group" data-tooth="31" data-fdi="47" onclick="selectTooth('31')">
+                <rect class="tooth {{ tooth_conditions_map.31|default:'healthy' }}" x="250" y="525" width="50" height="65" rx="8" />
+                <text class="tooth-label" x="275" y="562">31</text>
+                <text class="tooth-fdi" x="275" y="577">47</text>
+            </g>
+            <g id="tooth32" class="tooth-group" data-tooth="32" data-fdi="48" onclick="selectTooth('32')">
+                <rect class="tooth {{ tooth_conditions_map.32|default:'healthy' }}" x="180" y="510" width="50" height="70" rx="8" />
+                <text class="tooth-label" x="205" y="550">32</text>
+                <text class="tooth-fdi" x="205" y="565">48</text>
+            </g>
+            
+            <!-- Section Labels -->
+            <text x="400" y="250" style="font-size: 16px; font-weight: 700; fill: #6b7280; text-anchor: middle;">Upper Right</text>
+            <text x="1000" y="250" style="font-size: 16px; font-weight: 700; fill: #6b7280; text-anchor: middle;">Upper Left</text>
+            <text x="400" y="680" style="font-size: 16px; font-weight: 700; fill: #6b7280; text-anchor: middle;">Lower Right</text>
+            <text x="1000" y="680" style="font-size: 16px; font-weight: 700; fill: #6b7280; text-anchor: middle;">Lower Left</text>
+        </svg>
+        
+        <!-- Modern Condition Legend -->
+        <div class="condition-legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ffffff; border-color: #10b981;"></div>
+                <span class="legend-text">Healthy</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fee2e2; border-color: #ef4444;"></div>
+                <span class="legend-text">Carious</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #dbeafe; border-color: #3b82f6;"></div>
+                <span class="legend-text">Filled</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fef3c7; border-color: #f59e0b;"></div>
+                <span class="legend-text">Crown</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f3e8ff; border-color: #a855f7;"></div>
+                <span class="legend-text">Bridge</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #d1fae5; border-color: #059669;"></div>
+                <span class="legend-text">Implant</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fed7aa; border-color: #ea580c;"></div>
+                <span class="legend-text">Root Canal</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #fecaca; border-color: #dc2626;"></div>
+                <span class="legend-text">Extraction Needed</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f3f4f6; border-color: #9ca3af; opacity: 0.6;"></div>
+                <span class="legend-text">Missing</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i> Dental chart will be created automatically when you start documenting teeth conditions.
+</div>
+{% endif %}
+
+<!-- Procedures Section -->
+<div class="row g-4">
+    <div class="col-12">
+        <div class="modern-card">
+            <div class="procedure-tabs">
+                <button class="procedure-tab active" onclick="switchTab('all')">All Procedures ({{ procedures|length }})</button>
+                <button class="procedure-tab" onclick="switchTab('planned')">Planned</button>
+                <button class="procedure-tab" onclick="switchTab('completed')">Completed</button>
+                <button class="procedure-tab" onclick="switchTab('in_progress')">In Progress</button>
+            </div>
+            
+            <div id="proceduresList">
+                {% for procedure in procedures %}
+                <div class="procedure-item" data-status="{{ procedure.status }}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div style="flex: 1;">
+                            <h6 style="margin: 0 0 8px 0; font-weight: 600; color: var(--dark);">
+                                {{ procedure.procedure_name }}
+                            </h6>
+                            <div style="font-size: 12px; color: var(--gray); margin-bottom: 4px;">
+                                <span class="badge-modern badge-info me-2">{{ procedure.get_procedure_type_display }}</span>
+                                <span class="badge-modern badge-secondary">Teeth: {{ procedure.teeth }}</span>
+                                <span class="badge-modern badge-secondary">Qty: x{{ procedure.quantity }}</span>
+                            </div>
+                            {% if procedure.notes %}
+                            <div style="font-size: 13px; color: var(--gray); margin-top: 8px;">
+                                {{ procedure.notes }}
+                            </div>
+                            {% endif %}
+                            <div style="font-size: 11px; color: var(--gray); margin-top: 8px;">
+                                <i class="bi bi-calendar"></i> {{ procedure.created|date:"M d, Y" }}
+                                {% if procedure.performed_by %}
+                                | <i class="bi bi-person"></i> {{ procedure.performed_by.user.get_full_name }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div style="text-align: right; margin-left: 16px;">
+                            <div style="font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 8px;">
+                                GHS {{ procedure.fee|floatformat:2 }}
+                            </div>
+                            <span class="badge-modern badge-{% if procedure.status == 'completed' %}success{% elif procedure.status == 'in_progress' %}warning{% else %}info{% endif %}">
+                                {{ procedure.get_status_display }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-clipboard-x" style="font-size: 48px; opacity: 0.3;"></i>
+                    <div style="margin-top: 16px;">No procedures recorded yet</div>
+                    <button class="btn btn-primary-modern btn-modern mt-3" onclick="showAddProcedureModal()">
+                        <i class="bi bi-plus-circle"></i> Add First Procedure
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Procedure Modal -->
+{% if dental_chart %}
+<div class="modal fade" id="addProcedureModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Dental Procedure</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="procedureForm">
+                    <input type="hidden" name="dental_chart_id" value="{{ dental_chart.id }}">
+                    <div class="mb-3">
+                        <label class="form-label">Procedure Code</label>
+                        <input type="text" class="form-control-modern" name="procedure_code" required title="Enter text" placeholder="Enter text">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Procedure Name</label>
+                        <input type="text" class="form-control-modern" name="procedure_name" required title="Enter text" placeholder="Enter text">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Procedure Type</label>
+                        <select class="form-control-modern" name="procedure_type" required title="Select option" aria-label="Select option">
+                            {% for value, label in procedure_types %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Teeth (comma-separated, e.g., 11,12,13)</label>
+                        <input type="text" class="form-control-modern" name="teeth" id="selectedTeeth" placeholder="Select teeth from diagram" title="Enter text" placeholder="Enter text">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control-modern" name="quantity" value="1" min="1" title="Enter number" placeholder="Enter number">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Fee (GHS)</label>
+                            <input type="number" class="form-control-modern" name="fee" step="0.01" min="0" value="0" title="Enter number" placeholder="Enter number">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control-modern" name="notes" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary-modern" onclick="saveProcedure()">Save Procedure</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="modern-card text-center py-5">
+    <i class="bi bi-exclamation-triangle" style="font-size: 64px; color: var(--warning); opacity: 0.5;"></i>
+    <h5 style="margin-top: 24px; color: var(--gray);">No Patient Selected</h5>
+    <p style="color: var(--gray);">Please select a patient from the patient list to begin a dental consultation.</p>
+    <a href="{% url 'hospital:patient_list' %}" class="btn btn-primary-modern btn-modern mt-3">
+        <i class="bi bi-search"></i> Find Patient
+    </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Modern Dental Chart JavaScript
+    let selectedTooth = null;
+    let selectedTeeth = [];
+    
+    function selectTooth(toothNumber) {
+        selectedTooth = toothNumber;
+        
+        // Remove selection from all teeth
+        document.querySelectorAll('.tooth').forEach(tooth => {
+            tooth.classList.remove('selected');
+        });
+        
+        // Highlight selected tooth
+        const toothGroup = document.querySelector(`[data-tooth="${toothNumber}"]`);
+        if (toothGroup) {
+            const tooth = toothGroup.querySelector('.tooth');
+            if (tooth) {
+                tooth.classList.add('selected');
+            }
+        }
+        
+        // Add to selected teeth list (avoid duplicates)
+        if (!selectedTeeth.includes(toothNumber)) {
+            selectedTeeth.push(toothNumber);
+        }
+        
+        // Update selected teeth input field
+        const selectedTeethInput = document.getElementById('selectedTeeth');
+        if (selectedTeethInput) {
+            selectedTeethInput.value = selectedTeeth.join(',');
+        }
+        
+        // Auto-save condition if selector has value
+        const conditionType = document.getElementById('conditionTypeSelector');
+        if (conditionType && conditionType.value) {
+            saveToothCondition(toothNumber, conditionType.value);
+        }
+        
+        // Show tooth info with animation
+        showToothInfo(toothNumber);
+    }
+    
+    function clearSelection() {
+        selectedTooth = null;
+        selectedTeeth = [];
+        
+        // Remove visual selection from all teeth
+        document.querySelectorAll('.tooth').forEach(tooth => {
+            tooth.classList.remove('selected');
+        });
+        
+        // Clear input field
+        const selectedTeethInput = document.getElementById('selectedTeeth');
+        if (selectedTeethInput) {
+            selectedTeethInput.value = '';
+        }
+        
+        // Hide tooth info panel
+        const infoPanel = document.querySelector('.tooth-info-panel');
+        if (infoPanel) {
+            infoPanel.classList.remove('active');
+        }
+    }
+    
+    function showToothInfo(toothNumber) {
+        const toothGroup = document.querySelector(`[data-tooth="${toothNumber}"]`);
+        const fdiNumber = toothGroup ? toothGroup.getAttribute('data-fdi') : toothNumber;
+        
+        // Create or update tooth info panel
+        let infoPanel = document.querySelector('.tooth-info-panel');
+        if (!infoPanel) {
+            infoPanel = document.createElement('div');
+            infoPanel.className = 'tooth-info-panel';
+            document.querySelector('.chart-inner').appendChild(infoPanel);
+        }
+        
+        infoPanel.innerHTML = `
+            <h6 style="font-weight: 700; color: #1f2937; margin-bottom: 12px;">
+                <i class="bi bi-info-circle-fill" style="color: #667eea;"></i> 
+                Tooth #${toothNumber} (FDI: ${fdiNumber})
+            </h6>
+            <p style="color: #6b7280; margin: 0; font-size: 14px;">
+                Selected for procedure or condition marking. Choose a condition from the dropdown above or click "Add Procedure" to continue.
+            </p>
+        `;
+        infoPanel.classList.add('active');
+    }
+    
+    function saveToothCondition(toothNumber, conditionType) {
+        {% if not dental_chart %}
+        alert('Dental chart not available. Please refresh the page.');
+        return;
+        {% endif %}
+        
+        // Get FDI number from tooth group
+        const toothGroup = document.querySelector(`[data-tooth="${toothNumber}"]`);
+        const fdiNumber = toothGroup ? toothGroup.getAttribute('data-fdi') : toothNumber;
+        
+        const formData = new FormData();
+        formData.append('dental_chart_id', '{{ dental_chart.id }}');
+        formData.append('tooth_number', fdiNumber || toothNumber);
+        formData.append('condition_type', conditionType);
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+        
+        fetch('{% url "hospital:save_tooth_condition" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Update tooth appearance with new condition
+                const tooth = toothGroup.querySelector('.tooth');
+                if (tooth) {
+                    // Remove all existing condition classes
+                    const conditionClasses = ['healthy', 'carious', 'filled', 'missing', 'crown', 
+                                            'bridge', 'implant', 'root_canal', 'extraction_needed', 
+                                            'erupting', 'impacted', 'deciduous'];
+                    conditionClasses.forEach(cls => tooth.classList.remove(cls));
+                    
+                    // Add new condition class
+                    tooth.classList.add(conditionType);
+                }
+                
+                // Show success feedback
+                showNotification('Tooth condition saved successfully!', 'success');
+            } else {
+                showNotification('Failed to save tooth condition: ' + (data.error || 'Unknown error'), 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error saving tooth condition:', error);
+            showNotification('An error occurred while saving the tooth condition.', 'error');
+        });
+    }
+    
+    function showNotification(message, type) {
+        // Simple notification system
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            background: ${type === 'success' ? '#10b981' : '#ef4444'};
+            color: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            z-index: 10000;
+            font-weight: 600;
+            animation: slideIn 0.3s ease;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+    
+    // Condition selector change handler
+    const conditionSelector = document.getElementById('conditionTypeSelector');
+    if (conditionSelector) {
+        conditionSelector.addEventListener('change', function() {
+            if (selectedTooth && this.value) {
+                saveToothCondition(selectedTooth, this.value);
+            } else if (!selectedTooth && this.value) {
+                showNotification('Please select a tooth first', 'error');
+                this.value = '';
+            }
+        });
+    }
+    
+    function showAddProcedureModal() {
+        const modal = new bootstrap.Modal(document.getElementById('addProcedureModal'));
+        modal.show();
+    }
+    
+    function saveProcedure() {
+        const form = document.getElementById('procedureForm');
+        const formData = new FormData(form);
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+        
+        fetch('{% url "hospital:save_dental_procedure" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('Procedure saved successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showNotification('Error: ' + (data.error || 'Failed to save procedure'), 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error saving procedure:', error);
+            showNotification('An error occurred while saving the procedure', 'error');
+        });
+    }
+    
+    function switchTab(tab) {
+        // Update tab buttons
+        document.querySelectorAll('.procedure-tab').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        // Filter procedures
+        const items = document.querySelectorAll('.procedure-item');
+        items.forEach(item => {
+            if (tab === 'all' || item.dataset.status === tab) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+    
+    // Add hover effects for better UX
+    document.querySelectorAll('.tooth-group').forEach(group => {
+        group.addEventListener('mouseenter', function() {
+            const tooth = this.querySelector('.tooth');
+            if (tooth && !tooth.classList.contains('selected')) {
+                tooth.style.transform = 'scale(1.05)';
+            }
+        });
+        
+        group.addEventListener('mouseleave', function() {
+            const tooth = this.querySelector('.tooth');
+            if (tooth && !tooth.classList.contains('selected')) {
+                tooth.style.transform = 'scale(1)';
+            }
+        });
+    });
+</script>
+{% endblock %}

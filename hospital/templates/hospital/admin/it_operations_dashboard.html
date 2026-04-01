@@ -1,0 +1,1914 @@
+{% extends 'hospital/base.html' %}
+{% load humanize static %}
+
+{% block title %}IT Operations Center{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h4 class="mb-1">IT Operations Center</h4>
+                <p class="text-muted mb-0">Unified view of infrastructure, security, and user activity.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{% url 'hospital:system_health' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-heart-pulse me-2"></i>System Health
+                </a>
+                <button class="btn btn-primary" id="refreshSnapshotBtn">
+                    <i class="bi bi-arrow-clockwise me-2"></i>Refresh Snapshot
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3 col-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <small class="text-muted">Overall Status</small>
+                            <h5 class="mb-0" id="overallStatusMessage">{% if health_data.overall_status %}{{ health_data.overall_status.message|default:"System operational" }}{% else %}System operational{% endif %}</h5>
+                        </div>
+                        <span id="overallStatusBadge" class="badge bg-{% if health_data.overall_status and health_data.overall_status.status == 'healthy' %}success{% elif health_data.overall_status and health_data.overall_status.status == 'warning' %}warning{% else %}danger{% endif %} px-3 py-2">
+                            {% if health_data.overall_status %}{{ health_data.overall_status.status|upper|default:"UNKNOWN" }}{% else %}UNKNOWN{% endif %}
+                        </span>
+                    </div>
+                    <small class="text-muted">Last checked {% if snapshot.timestamp %}{{ snapshot.timestamp|naturaltime }}{% else %}Just now{% endif %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <small class="text-muted d-block mb-1">System Uptime</small>
+                    {% if uptime.available %}
+                    <h5 class="mb-0" id="uptimeValue">{{ uptime.humanized }}</h5>
+                    <small class="text-muted">Since {{ uptime.boot_time|date:"M d, Y H:i" }}</small>
+                    {% else %}
+                    <h5 class="mb-0 text-warning">{{ uptime.message }}</h5>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <small class="text-muted d-block mb-1">Active Sessions</small>
+                    <h5 class="mb-0" id="activeSessions">{% if session_stats %}{{ session_stats.active_sessions|default:0 }}{% else %}0{% endif %}</h5>
+                    <small class="text-muted">Staff online: <span id="activeStaff">{% if session_stats %}{{ session_stats.active_staff|default:0 }}{% else %}0{% endif %}</span></small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 col-12">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <small class="text-muted d-block mb-1">Incidents (24h)</small>
+                    <h5 class="mb-0" id="incidentTotal">{% if incident_summary %}{{ incident_summary.total_incidents|default:0 }}{% else %}0{% endif %}</h5>
+                    <small class="text-muted">Critical: <span id="criticalCount">{% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts.critical|default:0 }}{% else %}0{% endif %}</span></small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Staff Management Section -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-people-fill me-2"></i>Staff Management</h5>
+                        <small class="text-muted">Manage staff accounts, passwords, and sessions</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'hospital:staff_list_it' %}" class="btn btn-primary">
+                            <i class="bi bi-list-ul me-2"></i>View All Staff
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <a href="{% url 'hospital:staff_list_it' %}" class="text-decoration-none">
+                                <div class="d-flex align-items-center p-3 bg-light rounded hover-shadow">
+                                    <div class="flex-shrink-0">
+                                        <i class="bi bi-people-fill text-primary" style="font-size: 2rem;"></i>
+                                    </div>
+                                    <div class="flex-grow-1 ms-3">
+                                        <h6 class="mb-1">Staff List</h6>
+                                        <small class="text-muted">View and manage all staff members</small>
+                                    </div>
+                                </div>
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="flex-shrink-0">
+                                    <i class="bi bi-key-fill text-warning" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">Reset Passwords</h6>
+                                    <small class="text-muted">Reset passwords for staff members</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="flex-shrink-0">
+                                    <i class="bi bi-shield-lock-fill text-danger" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">Manage Sessions</h6>
+                                    <small class="text-muted">Revoke active sessions for staff</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Management Section -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-people me-2"></i>User Management</h5>
+                        <small class="text-muted">Create new users and manage passwords</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary" onclick="showCreateUserModal()">
+                            <i class="bi bi-person-plus me-2"></i>Create New User
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="flex-shrink-0">
+                                    <i class="bi bi-person-plus-fill text-primary" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">Create User</h6>
+                                    <small class="text-muted">Add new user accounts with passwords</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="flex-shrink-0">
+                                    <i class="bi bi-key-fill text-warning" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">Reset Password</h6>
+                                    <small class="text-muted">Reset passwords for existing users</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="d-flex align-items-center p-3 bg-light rounded">
+                                <div class="flex-shrink-0">
+                                    <i class="bi bi-shield-check-fill text-success" style="font-size: 2rem;"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">Permissions</h6>
+                                    <small class="text-muted">Set staff and superuser privileges</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- IT Personnel Section -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-people-fill me-2"></i>IT Personnel</h5>
+                        <small class="text-muted">IT staff and administrators with system access</small>
+                    </div>
+                    <span class="badge bg-primary">
+                        {{ it_personnel|length }} {% if it_personnel|length == 1 %}Member{% else %}Members{% endif %}
+                    </span>
+                </div>
+                <div class="card-body">
+                    {% if it_personnel %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Username</th>
+                                    <th>Employee ID</th>
+                                    <th>Profession</th>
+                                    <th>Department</th>
+                                    <th>Status</th>
+                                    <th>Last Login</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for person in it_personnel %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="flex-shrink-0 me-2">
+                                                <div class="avatar-circle bg-primary text-white">
+                                                    {{ person.full_name|first|upper }}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <strong>{{ person.full_name }}</strong>
+                                                {% if person.email %}
+                                                <div class="text-muted small">
+                                                    <i class="bi bi-envelope me-1"></i>{{ person.email }}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <code>{{ person.username }}</code>
+                                        {% if person.is_superuser %}
+                                        <span class="badge bg-danger ms-2">Superuser</span>
+                                        {% elif person.is_staff %}
+                                        <span class="badge bg-primary ms-2">Staff</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if person.employee_id %}
+                                        <span class="badge bg-secondary">{{ person.employee_id }}</span>
+                                        {% else %}
+                                        <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ person.profession }}</td>
+                                    <td>{{ person.department }}</td>
+                                    <td>
+                                        {% if person.is_active %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if person.last_login %}
+                                        <small class="text-muted">{{ person.last_login|naturaltime }}</small>
+                                        {% else %}
+                                        <span class="text-muted">Never</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-people text-muted" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-3 mb-0">No IT personnel found.</p>
+                        <small class="text-muted">IT staff are identified by being in IT groups or having admin profession.</small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource utilization -->
+    <div class="row g-4 mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">CPU Utilization</h6>
+                            <h4 class="mb-0" id="cpuPercent">{% if cpu and cpu.percent is not None %}{{ cpu.percent }}%{% else %}—{% endif %}</h4>
+                        </div>
+                        <span class="badge bg-{% if cpu and cpu.status == 'healthy' %}success{% elif cpu and cpu.status == 'warning' %}warning{% elif cpu and cpu.status == 'critical' %}danger{% else %}secondary{% endif %}" id="cpuStatusBadge">{% if cpu %}{{ cpu.status|upper|default:"UNKNOWN" }}{% else %}UNKNOWN{% endif %}</span>
+                    </div>
+                    <div class="progress" style="height: 10px;">
+                        <div id="cpuProgressBar" class="progress-bar {% if cpu and cpu.percent and cpu.percent > 85 %}bg-danger{% elif cpu and cpu.percent and cpu.percent > 70 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {% if cpu and cpu.percent is not None %}{{ cpu.percent }}{% else %}0{% endif %}%"></div>
+                    </div>
+                    <small class="text-muted d-block mt-2">Cores: {% if cpu and cpu.cores %}{{ cpu.cores }}{% else %}?{% endif %}</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">Memory Usage</h6>
+                            <h4 class="mb-0" id="memoryPercent">
+                                {% if health_data.memory and health_data.memory.percent_used %}
+                                    {{ health_data.memory.percent_used }}%
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </h4>
+                        </div>
+                        <span class="badge bg-{% if health_data.memory and health_data.memory.status == 'healthy' %}success{% elif health_data.memory and health_data.memory.status == 'warning' %}warning{% else %}danger{% endif %}">
+                            {% if health_data.memory %}{{ health_data.memory.status|upper|default:"UNKNOWN" }}{% else %}UNKNOWN{% endif %}
+                        </span>
+                    </div>
+                    {% if health_data.memory and health_data.memory.percent_used %}
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar {% if health_data.memory.percent_used > 90 %}bg-danger{% elif health_data.memory.percent_used > 80 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ health_data.memory.percent_used }}%"></div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Used {{ health_data.memory.used_gb|default:"?" }} GB / Total {{ health_data.memory.total_gb|default:"?" }} GB
+                    </small>
+                    {% else %}
+                    <small class="text-muted">{% if health_data.memory %}{{ health_data.memory.message|default:"Memory metrics unavailable" }}{% else %}Memory metrics unavailable{% endif %}</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">Disk Usage</h6>
+                            <h4 class="mb-0">
+                                {% if health_data.disk and health_data.disk.percent_used %}
+                                    {{ health_data.disk.percent_used }}%
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </h4>
+                        </div>
+                        <span class="badge bg-{% if health_data.disk and health_data.disk.status == 'healthy' %}success{% elif health_data.disk and health_data.disk.status == 'warning' %}warning{% else %}danger{% endif %}">
+                            {% if health_data.disk %}{{ health_data.disk.status|upper|default:"UNKNOWN" }}{% else %}UNKNOWN{% endif %}
+                        </span>
+                    </div>
+                    {% if health_data.disk and health_data.disk.percent_used %}
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar {% if health_data.disk.percent_used > 90 %}bg-danger{% elif health_data.disk.percent_used > 80 %}bg-warning{% else %}bg-success{% endif %}" role="progressbar" style="width: {{ health_data.disk.percent_used }}%"></div>
+                    </div>
+                    <small class="text-muted d-block mt-2">
+                        Used {{ health_data.disk.used_gb|default:"?" }} GB / Free {{ health_data.disk.free_gb|default:"?" }} GB
+                    </small>
+                    {% else %}
+                    <small class="text-muted">{% if health_data.disk %}{{ health_data.disk.message|default:"Disk metrics unavailable" }}{% else %}Disk metrics unavailable{% endif %}</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h6 class="text-muted mb-1">Network Traffic</h6>
+                            <h4 class="mb-0">Live</h4>
+                        </div>
+                        <span class="badge bg-{% if network and network.status == 'healthy' %}success{% elif network and network.status == 'warning' %}warning{% else %}danger{% endif %}">
+                            {% if network %}{{ network.status|upper|default:"UNKNOWN" }}{% else %}UNKNOWN{% endif %}
+                        </span>
+                    </div>
+                    {% if network and network.has_metrics %}
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <small class="text-muted d-block">Sent</small>
+                            <strong id="networkSent">{% if network.bytes_sent %}{{ network.bytes_sent|filesizeformat }}{% else %}0 B{% endif %}</strong>
+                        </div>
+                        <div class="text-end">
+                            <small class="text-muted d-block">Received</small>
+                            <strong id="networkRecv">{% if network.bytes_recv %}{{ network.bytes_recv|filesizeformat }}{% else %}0 B{% endif %}</strong>
+                        </div>
+                    </div>
+                    {% else %}
+                    <small class="text-muted">{% if network %}{{ network.message|default:"Network metrics unavailable" }}{% else %}Network metrics unavailable{% endif %}</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Services and sessions -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0">
+                    <h5 class="mb-0"><i class="bi bi-hdd-network me-2"></i>Core Services</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% if health_data.services %}
+                            {% for name, svc in health_data.services.items %}
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted text-uppercase small">{{ name }}</span>
+                                    <span class="badge bg-{% if svc.status == 'healthy' %}success{% elif svc.status == 'warning' %}warning{% else %}danger{% endif %}">
+                                        {{ svc.status|upper|default:"UNKNOWN" }}
+                                    </span>
+                                </div>
+                                <small class="text-muted">{{ svc.message|default:"Service status unknown" }}</small>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted mb-0">No service metrics available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0">
+                    <h5 class="mb-0"><i class="bi bi-shield-lock me-2"></i>Session & Access Insights</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <h3 class="mb-0" id="activeSessionsCard">{% if session_stats %}{{ session_stats.active_sessions|default:0 }}{% else %}0{% endif %}</h3>
+                            <small class="text-muted d-block">Active Sessions</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 class="mb-0" id="activeStaffCard">{% if session_stats %}{{ session_stats.active_staff|default:0 }}{% else %}0{% endif %}</h3>
+                            <small class="text-muted d-block">Staff Accounts</small>
+                        </div>
+                        <div class="col-4">
+                            <h3 class="mb-0" id="recentLogins">{% if session_stats %}{{ session_stats.recent_logins|default:0 }}{% else %}0{% endif %}</h3>
+                            <small class="text-muted d-block">Logins (24h)</small>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-muted">Incident Severity</span>
+                            <small class="text-muted">Last 24 hours</small>
+                        </div>
+                        <div class="mt-3">
+                            <div class="d-flex justify-content-between">
+                                <span><span class="badge bg-danger me-2">Critical</span><span id="criticalCountInline">{% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts.critical|default:0 }}{% else %}0{% endif %}</span></span>
+                                <span><span class="badge bg-danger-subtle text-danger me-2">Error</span><span id="errorCount">{% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts.error|default:0 }}{% else %}0{% endif %}</span></span>
+                                <span><span class="badge bg-warning text-dark me-2">Warn</span><span id="warningCount">{% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts.warning|default:0 }}{% else %}0{% endif %}</span></span>
+                                <span><span class="badge bg-secondary me-2">Info</span><span id="infoCount">{% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts.info|default:0 }}{% else %}0{% endif %}</span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Sessions & Account Control -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-people me-2"></i>Active Sessions</h5>
+                        <small class="text-muted">Top {{ active_sessions|length }} sessions shown</small>
+                    </div>
+                    <a href="{% url 'hospital:active_sessions' %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Full Manager
+                    </a>
+                </div>
+                <div class="card-body" id="activeSessionsList">
+                    {% if active_sessions %}
+                    <div class="list-group list-group-flush">
+                        {% for session in active_sessions %}
+                        <div class="list-group-item border-0 px-0" data-session-key="{{ session.session_key }}">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                                <div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <strong>{{ session.full_name }}</strong>
+                                        <span class="badge {% if session.is_superuser %}bg-danger{% elif session.is_staff %}bg-primary{% else %}bg-secondary{% endif %}">
+                                            {% if session.is_superuser %}Superuser{% elif session.is_staff %}Staff{% else %}User{% endif %}
+                                        </span>
+                                        {% if session.session_count > 1 %}
+                                        <span class="badge bg-info" title="User has {{ session.session_count }} active sessions">
+                                            {{ session.session_count }} Sessions
+                                        </span>
+                                        {% endif %}
+                                        {% if not session.is_active_user %}
+                                        <span class="badge bg-warning text-dark">Blocked</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-muted small">
+                                        Logged in {{ session.login_time|naturaltime }} • {{ session.username }}
+                                    </div>
+                                    <div class="text-muted small">
+                                        {% if session.email %}<i class="bi bi-envelope me-1"></i>{{ session.email }}{% endif %}
+                                    </div>
+                                    {% if session.ip_address %}
+                                    <div class="text-muted small">
+                                        <i class="bi bi-geo-alt me-1"></i>{{ session.ip_address }}
+                                    </div>
+                                    {% endif %}
+                                    {% if session.user_agent %}
+                                    <div class="text-muted small">
+                                        <i class="bi bi-laptop me-1"></i>{{ session.user_agent|truncatewords:10 }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex flex-column gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            onclick="logoutSession('{{ session.session_key|escapejs }}', '{{ session.username|escapejs }}', this)">
+                                        <i class="bi bi-box-arrow-right me-1"></i>Logout Session
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            onclick="logoutUser({{ session.user_id }}, '{{ session.username|escapejs }}', this)">
+                                        <i class="bi bi-person-x me-1"></i>Logout User
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-warning"
+                                            onclick="showResetPasswordModal({{ session.user_id }}, '{{ session.username|escapejs }}')">
+                                        <i class="bi bi-key me-1"></i>Reset Password
+                                    </button>
+                                    {% if session.is_active_user %}
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            onclick="blockUser({{ session.user_id }}, '{{ session.username|escapejs }}', this)">
+                                        <i class="bi bi-lock-fill me-1"></i>Block User
+                                    </button>
+                                    {% else %}
+                                    <button class="btn btn-sm btn-success"
+                                            onclick="unblockUser({{ session.user_id }}, '{{ session.username|escapejs }}', this)">
+                                        <i class="bi bi-unlock-fill me-1"></i>Unblock
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">No active sessions detected.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-lock-fill me-2"></i>Blocked Accounts</h5>
+                        <small class="text-muted">Recent locked users</small>
+                    </div>
+                    <span class="badge {% if blocked_users %}bg-danger{% else %}bg-success{% endif %}">
+                        {{ blocked_users|length }} locked
+                    </span>
+                </div>
+                <div class="card-body" id="blockedUsersList">
+                    {% if blocked_users %}
+                    <div class="list-group list-group-flush">
+                        {% for blocked in blocked_users %}
+                        <div class="list-group-item border-0 px-0">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                                <div>
+                                    <strong>{{ blocked.full_name }}</strong>
+                                    <div class="text-muted small">
+                                        {{ blocked.username }}{% if blocked.email %} • {{ blocked.email }}{% endif %}
+                                    </div>
+                                    <div class="text-muted small">
+                                        {% if blocked.last_login %}
+                                            Last login {{ blocked.last_login|naturaltime }}
+                                        {% else %}
+                                            Never logged in
+                                        {% endif %}
+                                    </div>
+                                    {% if blocked.last_ip %}
+                                    <div class="text-muted small">
+                                        <i class="bi bi-geo-alt me-1"></i>{{ blocked.last_ip }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="d-flex flex-column gap-2">
+                                    <button class="btn btn-sm btn-warning"
+                                            onclick="showResetPasswordModal({{ blocked.user_id }}, '{{ blocked.username|escapejs }}')">
+                                        <i class="bi bi-key me-1"></i>Reset Password
+                                    </button>
+                                    <button class="btn btn-sm btn-success"
+                                            onclick="unblockUser({{ blocked.user_id }}, '{{ blocked.username|escapejs }}', this)">
+                                        <i class="bi bi-unlock-fill me-1"></i>Unblock
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">No blocked accounts. All users are active.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incidents & Activity -->
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-bug me-2"></i>Recent Incidents</h5>
+                    <small class="text-muted">Auto-refreshes every minute</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Severity</th>
+                                    <th>Description</th>
+                                    <th>User</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incidentTableBody">
+                                {% for incident in recent_incidents %}
+                                <tr>
+                                    <td>{{ incident.created|date:"Y-m-d H:i" }}</td>
+                                    <td><span class="badge bg-{% if incident.severity == 'critical' %}danger{% elif incident.severity == 'error' %}danger{% elif incident.severity == 'warning' %}warning{% else %}secondary{% endif %}">{{ incident.severity|upper }}</span></td>
+                                    <td>{{ incident.description|truncatechars:80 }}</td>
+                                    <td>
+                                        {% if incident.user %}
+                                            {{ incident.user.username }}
+                                        {% else %}
+                                            System
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-muted text-center">No incident data available.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Live Activity</h5>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <label for="activityDateFilter" class="small text-muted mb-0">Calendar</label>
+                        <input type="date" id="activityDateFilter" class="form-control form-control-sm" value="{{ selected_activity_date }}">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="activityTodayBtn">Today</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="activityAllBtn">All</button>
+                        <a href="{% url 'hospital:activity_logs' %}" class="btn btn-sm btn-outline-primary">Full View</a>
+                        <a href="{% url 'hospital:audit_logs' %}" class="btn btn-sm btn-primary">Audit Activities</a>
+                        <small class="text-muted" id="activityCountLabel">Showing {{ activity_feed|length }} events</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush" id="activityFeed">
+                        {% for activity in activity_feed %}
+                        <div class="list-group-item border-0 px-0 activity-feed-item"
+                             data-url="{% if activity.metadata.path %}{{ activity.metadata.path }}{% else %}{% url 'hospital:activity_logs' %}?q={{ activity.description|urlencode }}{% endif %}">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <strong>{{ activity.activity_type|title }}</strong>
+                                    <p class="mb-1 text-muted small">{{ activity.description }}</p>
+                                </div>
+                                <small class="text-muted text-end">
+                                    {% if activity.user %}
+                                        {{ activity.user.username }}
+                                    {% else %}
+                                        System
+                                    {% endif %}<br>
+                                    {{ activity.created|naturaltime }}
+                                </small>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <p class="text-muted mb-0">No activity recorded.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics & Charts Section -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>System Performance Analytics</h5>
+                        <small class="text-muted">Real-time metrics over the last 24 hours</small>
+                    </div>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-secondary active" onclick="updateChartTimeframe('24h')">24H</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="updateChartTimeframe('7d')">7D</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="updateChartTimeframe('30d')">30D</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <canvas id="systemMetricsChart" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-header bg-white border-0">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Incident Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="incidentChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Activity Chart -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Session Activity Timeline</h5>
+                        <small class="text-muted">User login activity over time</small>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <canvas id="sessionActivityChart" height="80"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- IT Team Chat Section -->
+    <div class="row g-4 mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0"><i class="bi bi-chat-dots me-2"></i>IT Team Communication</h5>
+                        <small class="text-muted">Real-time collaboration for IT operations</small>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'hospital:chat_dashboard' %}" class="btn btn-sm btn-primary">
+                            <i class="bi bi-arrow-right-circle me-1"></i>Open Full Chat
+                        </a>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()">
+                            <i class="bi bi-trash me-1"></i>Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="height: 400px; display: flex; flex-direction: column;">
+                    <div id="chatMessages" class="flex-grow-1 p-3" style="overflow-y: auto; background: #f8f9fa; max-height: 320px;">
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-chat-left-text" style="font-size: 2rem;"></i>
+                            <p class="mt-2 mb-0">No messages yet. Start the conversation!</p>
+                            <a href="{% url 'hospital:chat_dashboard' %}" class="btn btn-sm btn-primary mt-3">
+                                <i class="bi bi-chat-dots me-1"></i>Go to Chat Channel
+                            </a>
+                        </div>
+                    </div>
+                    <div class="border-top p-3 bg-white">
+                        <form id="chatForm" onsubmit="sendChatMessage(event)">
+                            <div class="input-group">
+                                <input type="text" id="chatInput" class="form-control" placeholder="Type your message..." autocomplete="off">
+                                <button class="btn btn-primary" type="submit">
+                                    <i class="bi bi-send me-1"></i>Send
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.avatar-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.activity-feed-item {
+    cursor: pointer;
+    border-radius: 0.375rem;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.activity-feed-item:hover {
+    background-color: #f8f9fa;
+}
+</style>
+
+<script>
+(function() {
+    const refreshBtn = document.getElementById('refreshSnapshotBtn');
+    const endpoint = "{% url 'hospital:it_operations_api' %}";
+    const activityDateFilter = document.getElementById('activityDateFilter');
+    const activityTodayBtn = document.getElementById('activityTodayBtn');
+    const activityAllBtn = document.getElementById('activityAllBtn');
+    const activityCountLabel = document.getElementById('activityCountLabel');
+    const activityLogsBaseUrl = "{% url 'hospital:activity_logs' %}";
+
+    function formatBytes(bytes) {
+        if (bytes === null || bytes === undefined) return 'N/A';
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        if (bytes === 0) return '0 B';
+        const i = Math.floor(Math.log(bytes) / Math.log(1024));
+        return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+    }
+
+    window.updateDashboard = function(data) {
+        // Overall status
+        const badge = document.getElementById('overallStatusBadge');
+        const message = document.getElementById('overallStatusMessage');
+        if (badge && data.health_data.overall_status) {
+            const status = data.health_data.overall_status.status;
+            badge.className = `badge px-3 py-2 bg-${status === 'healthy' ? 'success' : status === 'warning' ? 'warning' : 'danger'}`;
+            badge.textContent = status.toUpperCase();
+            message.textContent = data.health_data.overall_status.message;
+        }
+
+        // Uptime
+        const uptimeValue = document.getElementById('uptimeValue');
+        if (uptimeValue && data.uptime && data.uptime.available) {
+            uptimeValue.textContent = data.uptime.humanized;
+        }
+
+        // Sessions
+        ['activeSessions', 'activeSessionsCard'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = data.session_stats.active_sessions ?? '0';
+        });
+        const activeStaffEls = [document.getElementById('activeStaff'), document.getElementById('activeStaffCard')];
+        activeStaffEls.forEach(el => {
+            if (el) el.textContent = data.session_stats.active_staff ?? '0';
+        });
+        const recentLogins = document.getElementById('recentLogins');
+        if (recentLogins) {
+            recentLogins.textContent = data.session_stats.recent_logins ?? '0';
+        }
+
+        // Incidents summary
+        const summary = data.incident_summary?.severity_counts || {};
+        const mappings = {
+            criticalCount: summary.critical,
+            criticalCountInline: summary.critical,
+            errorCount: summary.error,
+            warningCount: summary.warning,
+            infoCount: summary.info,
+            incidentTotal: data.incident_summary?.total_incidents
+        };
+        Object.entries(mappings).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (el && value !== undefined) el.textContent = value;
+        });
+
+        // CPU
+        const cpuPercent = document.getElementById('cpuPercent');
+        const cpuBadge = document.getElementById('cpuStatusBadge');
+        const cpuBar = document.getElementById('cpuProgressBar');
+        if (cpuPercent) cpuPercent.textContent = `${data.cpu.percent ?? '—'}%`;
+        if (cpuBadge) {
+            const cpuStatus = data.cpu.status || 'secondary';
+            cpuBadge.className = `badge bg-${cpuStatus}`;
+            cpuBadge.textContent = cpuStatus.toUpperCase();
+        }
+        if (cpuBar && data.cpu.percent !== undefined) {
+            cpuBar.style.width = `${data.cpu.percent}%`;
+            cpuBar.className = `progress-bar ${data.cpu.percent > 85 ? 'bg-danger' : data.cpu.percent > 70 ? 'bg-warning' : 'bg-success'}`;
+        }
+
+        // Network
+        const netSent = document.getElementById('networkSent');
+        const netRecv = document.getElementById('networkRecv');
+        if (netSent) netSent.textContent = formatBytes(data.network.bytes_sent);
+        if (netRecv) netRecv.textContent = formatBytes(data.network.bytes_recv);
+
+        // Active sessions list - deduplicate by user_id
+        const activeSessionsList = document.getElementById('activeSessionsList');
+        if (activeSessionsList && Array.isArray(data.active_sessions)) {
+            // Deduplicate by user_id - keep only most recent session per user
+            const seenUsers = new Map();
+            const uniqueSessions = [];
+            
+            for (const session of data.active_sessions) {
+                const userId = session.user_id;
+                if (!seenUsers.has(userId)) {
+                    seenUsers.set(userId, session);
+                    uniqueSessions.push(session);
+                } else {
+                    // Keep the most recent session
+                    const existing = seenUsers.get(userId);
+                    const existingTime = existing.login_time ? new Date(existing.login_time).getTime() : 0;
+                    const newTime = session.login_time ? new Date(session.login_time).getTime() : 0;
+                    if (newTime > existingTime) {
+                        seenUsers.set(userId, session);
+                        const index = uniqueSessions.findIndex(s => s.user_id === userId);
+                        if (index !== -1) {
+                            uniqueSessions[index] = session;
+                        }
+                    }
+                }
+            }
+            
+            if (uniqueSessions.length > 0) {
+                activeSessionsList.innerHTML = uniqueSessions.map(session => {
+                    const loginTime = session.login_time ? new Date(session.login_time).toLocaleString() : '—';
+                    const sessionCount = session.session_count || 1;
+                    const sessionBadge = sessionCount > 1 ? `<span class="badge bg-info ms-2">${sessionCount} Sessions</span>` : '';
+                    return `
+                        <div class="list-group-item border-0 px-0" data-session-key="${session.session_key || ''}">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+                                <div>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <strong>${session.full_name || session.username || 'Unknown'}</strong>
+                                        <span class="badge ${session.is_superuser ? 'bg-danger' : session.is_staff ? 'bg-primary' : 'bg-secondary'}">
+                                            ${session.is_superuser ? 'Superuser' : session.is_staff ? 'Staff' : 'User'}
+                                        </span>
+                                        ${sessionBadge}
+                                        ${!session.is_active_user ? '<span class="badge bg-warning text-dark">Blocked</span>' : ''}
+                                    </div>
+                                    <div class="text-muted small">
+                                        Logged in ${loginTime} • ${session.username || ''}
+                                    </div>
+                                    ${session.email ? `<div class="text-muted small"><i class="bi bi-envelope me-1"></i>${session.email}</div>` : ''}
+                                    ${session.ip_address ? `<div class="text-muted small"><i class="bi bi-geo-alt me-1"></i>${session.ip_address}</div>` : ''}
+                                </div>
+                                <div class="d-flex flex-column gap-2">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="logoutSession('${session.session_key || ''}', '${session.username || ''}', this)">
+                                        <i class="bi bi-box-arrow-right me-1"></i>Logout Session
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="logoutUser(${session.user_id}, '${session.username || ''}', this)">
+                                        <i class="bi bi-person-x me-1"></i>Logout User
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                activeSessionsList.innerHTML = '<p class="text-muted mb-0">No active sessions detected.</p>';
+            }
+        }
+        
+        // Incidents table
+        const tableBody = document.getElementById('incidentTableBody');
+        if (tableBody && Array.isArray(data.recent_incidents)) {
+            tableBody.innerHTML = data.recent_incidents.map(incident => `
+                <tr>
+                    <td>${incident.timestamp ? new Date(incident.timestamp).toLocaleString() : '—'}</td>
+                    <td><span class="badge ${incident.severity === 'critical' || incident.severity === 'error' ? 'bg-danger' : incident.severity === 'warning' ? 'bg-warning' : 'bg-secondary'}">${incident.severity?.toUpperCase() ?? ''}</span></td>
+                    <td>${incident.description ?? ''}</td>
+                    <td>${incident.user ?? 'System'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function resolveActivityUrl(activity) {
+            if (activity?.path && String(activity.path).startsWith('/')) {
+                return activity.path;
+            }
+            const query = new URLSearchParams();
+            if (activity?.description) {
+                query.set('q', activity.description);
+            }
+            if (activity?.activity_type) {
+                query.set('activity_type', activity.activity_type);
+            }
+            return `${activityLogsBaseUrl}?${query.toString()}`;
+        }
+
+        function bindActivityClicks() {
+            document.querySelectorAll('.activity-feed-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const targetUrl = this.dataset.url;
+                    if (targetUrl) {
+                        window.location.href = targetUrl;
+                    }
+                });
+            });
+        }
+
+        // Activity feed
+        const activityFeed = document.getElementById('activityFeed');
+        if (activityFeed && Array.isArray(data.activity_feed)) {
+            if (activityCountLabel) {
+                activityCountLabel.textContent = `Showing ${data.activity_feed.length} events`;
+            }
+            if (data.activity_feed.length === 0) {
+                activityFeed.innerHTML = '<p class="text-muted mb-0">No activity recorded for the selected date.</p>';
+                return;
+            }
+            activityFeed.innerHTML = data.activity_feed.map(activity => `
+                <div class="list-group-item border-0 px-0 activity-feed-item" data-url="${resolveActivityUrl(activity)}">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <strong>${activity.activity_type?.replace('_', ' ') ?? 'Activity'}</strong>
+                            <p class="mb-1 text-muted small">${activity.description ?? ''}</p>
+                        </div>
+                        <small class="text-muted text-end">
+                            ${activity.user ?? 'System'}<br>
+                            ${activity.timestamp ? new Date(activity.timestamp).toLocaleString() : ''}
+                        </small>
+                    </div>
+                </div>
+            `).join('');
+            bindActivityClicks();
+        }
+    }
+
+    function fetchSnapshot() {
+        const selectedDate = activityDateFilter ? activityDateFilter.value : '';
+        const query = new URLSearchParams();
+        if (selectedDate) {
+            query.set('activity_date', selectedDate);
+            query.set('activity_limit', 'all');
+        } else {
+            query.set('activity_limit', 'all');
+        }
+        const url = `${endpoint}?${query.toString()}`;
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || (typeof getCsrfToken === 'function' ? getCsrfToken() : ''),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(updateDashboard)
+            .catch(error => {
+                console.error('IT dashboard refresh failed:', error);
+                // Show user-friendly error message
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'alert alert-warning alert-dismissible fade show';
+                errorMsg.style.position = 'fixed';
+                errorMsg.style.top = '20px';
+                errorMsg.style.right = '20px';
+                errorMsg.style.zIndex = '9999';
+                errorMsg.innerHTML = `
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Unable to refresh dashboard data. Please try again.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.body.appendChild(errorMsg);
+                setTimeout(() => errorMsg.remove(), 5000);
+            });
+    }
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', fetchSnapshot);
+    }
+
+    if (activityDateFilter) {
+        activityDateFilter.addEventListener('change', fetchSnapshot);
+    }
+
+    if (activityTodayBtn) {
+        activityTodayBtn.addEventListener('click', function() {
+            if (!activityDateFilter) return;
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            activityDateFilter.value = `${yyyy}-${mm}-${dd}`;
+            fetchSnapshot();
+        });
+    }
+
+    if (activityAllBtn) {
+        activityAllBtn.addEventListener('click', function() {
+            if (!activityDateFilter) return;
+            activityDateFilter.value = '';
+            fetchSnapshot();
+        });
+    }
+
+    bindActivityClicks();
+
+    // Initial load
+    fetchSnapshot();
+    
+    // Real-time updates every 10 seconds
+    setInterval(fetchSnapshot, 10000);
+})();
+
+// Chart.js Library - Load and initialize with data
+(function() {
+    const endpoint = "{% url 'hospital:it_operations_api' %}";
+    
+    function loadChartsWithData() {
+        // Ensure DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadChartsWithData);
+            return;
+        }
+        
+        // Check if canvas elements exist
+        const systemMetricsCanvas = document.getElementById('systemMetricsChart');
+        const incidentCanvas = document.getElementById('incidentChart');
+        const sessionCanvas = document.getElementById('sessionActivityChart');
+        
+        if (!systemMetricsCanvas || !incidentCanvas || !sessionCanvas) {
+            console.error('Chart canvas elements not found, retrying...');
+            setTimeout(loadChartsWithData, 500);
+            return;
+        }
+        
+        // Fetch initial data for charts
+        fetch(endpoint, {
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || (typeof getCsrfToken === 'function' ? getCsrfToken() : ''),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Chart data loaded:', data);
+            if (typeof Chart !== 'undefined') {
+                initAllCharts(data);
+            } else {
+                console.error('Chart.js not loaded yet');
+                setTimeout(loadChartsWithData, 500);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading chart data:', error);
+            if (typeof Chart !== 'undefined') {
+                initAllCharts(null);
+            }
+        });
+    }
+    
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            if (typeof Chart === 'undefined') {
+                const script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+                script.onload = function() {
+                    console.log('Chart.js loaded successfully');
+                    setTimeout(loadChartsWithData, 200);
+                };
+                script.onerror = function() {
+                    console.error('Failed to load Chart.js');
+                };
+                document.head.appendChild(script);
+            } else {
+                loadChartsWithData();
+            }
+        });
+    } else {
+        // DOM already ready
+        if (typeof Chart === 'undefined') {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+            script.onload = function() {
+                console.log('Chart.js loaded successfully');
+                setTimeout(loadChartsWithData, 200);
+            };
+            script.onerror = function() {
+                console.error('Failed to load Chart.js');
+            };
+            document.head.appendChild(script);
+        } else {
+            loadChartsWithData();
+        }
+    }
+})();
+
+// Initialize all charts
+let systemMetricsChart, incidentChart, sessionActivityChart;
+let chartTimeframe = '24h';
+let initialChartData = null;
+let chartsInitialized = false;
+
+function initAllCharts(initialData) {
+    if (chartsInitialized) {
+        console.log('Charts already initialized, updating with new data');
+        updateCharts(initialData);
+        return;
+    }
+    
+    initialChartData = initialData;
+    console.log('Initializing all charts with data:', initialData);
+    
+    try {
+        initSystemMetricsChart(initialData);
+        initIncidentChart(initialData);
+        initSessionActivityChart(initialData);
+        chartsInitialized = true;
+        console.log('All charts initialized successfully');
+    } catch (error) {
+        console.error('Error initializing charts:', error);
+    }
+}
+
+// System Metrics Chart
+function initSystemMetricsChart(initialData) {
+    const ctx = document.getElementById('systemMetricsChart');
+    if (!ctx) {
+        console.error('System metrics chart canvas not found');
+        return;
+    }
+    
+    const chartData = initialData?.chart_data?.system_metrics || {};
+    console.log('Initializing system metrics chart with data:', chartData);
+    
+    // Destroy existing chart if it exists
+    if (systemMetricsChart) {
+        systemMetricsChart.destroy();
+    }
+    
+    // Prepare data - ensure we have arrays
+    const labels = chartData.labels && Array.isArray(chartData.labels) && chartData.labels.length > 0 
+        ? chartData.labels 
+        : Array.from({length: 25}, (_, i) => {
+            const d = new Date();
+            d.setHours(d.getHours() - (24 - i));
+            return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        });
+    
+    const cpuData = chartData.cpu && Array.isArray(chartData.cpu) && chartData.cpu.length > 0 
+        ? chartData.cpu.map(v => parseFloat(v) || 0)
+        : Array(25).fill(0);
+    const memData = chartData.memory && Array.isArray(chartData.memory) && chartData.memory.length > 0 
+        ? chartData.memory.map(v => parseFloat(v) || 0)
+        : Array(25).fill(0);
+    const diskData = chartData.disk && Array.isArray(chartData.disk) && chartData.disk.length > 0 
+        ? chartData.disk.map(v => parseFloat(v) || 0)
+        : Array(25).fill(0);
+    
+    console.log('System metrics chart data:', { labels: labels.length, cpu: cpuData.length, mem: memData.length, disk: diskData.length });
+    
+    systemMetricsChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'CPU Usage (%)',
+                    data: cpuData,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Memory Usage (%)',
+                    data: memData,
+                    borderColor: 'rgb(16, 185, 129)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Disk Usage (%)',
+                    data: diskData,
+                    borderColor: 'rgb(245, 158, 11)',
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            animation: {
+                duration: 750
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxTicksLimit: 12
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Incident Distribution Chart
+function initIncidentChart(initialData) {
+    const ctx = document.getElementById('incidentChart');
+    if (!ctx) {
+        console.error('Incident chart canvas not found');
+        return;
+    }
+    
+    // Get summary from initialData or template
+    const summary = initialData?.incident_summary?.severity_counts || {% if incident_summary and incident_summary.severity_counts %}{{ incident_summary.severity_counts|safe }}{% else %}{critical: 0, error: 0, warning: 0, info: 0}{% endif %};
+    console.log('Initializing incident chart with data:', summary);
+    
+    // Destroy existing chart if it exists
+    if (incidentChart) {
+        incidentChart.destroy();
+    }
+    
+    incidentChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Critical', 'Error', 'Warning', 'Info'],
+            datasets: [{
+                data: [
+                    summary.critical || 0,
+                    summary.error || 0,
+                    summary.warning || 0,
+                    summary.info || 0
+                ],
+                backgroundColor: [
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(251, 191, 36, 0.8)',
+                    'rgba(59, 130, 246, 0.8)'
+                ],
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                }
+            }
+        }
+    });
+}
+
+// Session Activity Chart
+function initSessionActivityChart(initialData) {
+    const ctx = document.getElementById('sessionActivityChart');
+    if (!ctx) {
+        console.error('Session activity chart canvas not found');
+        return;
+    }
+    
+    const chartData = initialData?.chart_data?.session_activity || {};
+    console.log('Initializing session activity chart with data:', chartData);
+    
+    // Destroy existing chart if it exists
+    if (sessionActivityChart) {
+        sessionActivityChart.destroy();
+    }
+    
+    // Prepare data - ensure we have arrays
+    const sessionLabels = chartData.labels && Array.isArray(chartData.labels) && chartData.labels.length > 0 
+        ? chartData.labels 
+        : Array.from({length: 25}, (_, i) => {
+            const d = new Date();
+            d.setHours(d.getHours() - (24 - i));
+            return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        });
+    
+    const sessionData = chartData.data && Array.isArray(chartData.data) && chartData.data.length > 0 
+        ? chartData.data.map(v => parseInt(v) || 0)
+        : Array(25).fill(0);
+    
+    console.log('Session activity chart data:', { labels: sessionLabels.length, data: sessionData.length });
+    
+    sessionActivityChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sessionLabels,
+            datasets: [{
+                label: 'Active Sessions',
+                data: sessionData,
+                backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                borderColor: 'rgb(59, 130, 246)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            animation: {
+                duration: 750
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                },
+                x: {
+                    ticks: {
+                        maxTicksLimit: 12
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Update charts with data
+function updateCharts(data) {
+    if (!data) return;
+    
+    // Update system metrics chart with new data point
+    if (systemMetricsChart && data.cpu && data.health_data) {
+        const now = new Date();
+        const timeLabel = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const labels = systemMetricsChart.data.labels;
+        const cpuData = systemMetricsChart.data.datasets[0].data;
+        const memData = systemMetricsChart.data.datasets[1].data;
+        const diskData = systemMetricsChart.data.datasets[2].data;
+        
+        // Add new data point
+        labels.push(timeLabel);
+        cpuData.push(data.cpu.percent || 0);
+        memData.push(data.health_data.memory?.percent_used || 0);
+        diskData.push(data.health_data.disk?.percent_used || 0);
+        
+        // Keep only last 25 data points (24 hours)
+        if (labels.length > 25) {
+            labels.shift();
+            cpuData.shift();
+            memData.shift();
+            diskData.shift();
+        }
+        
+        systemMetricsChart.update('none');
+    }
+    
+    // Update incident chart
+    if (incidentChart && data.incident_summary) {
+        const summary = data.incident_summary.severity_counts || {};
+        incidentChart.data.datasets[0].data = [
+            summary.critical || 0,
+            summary.error || 0,
+            summary.warning || 0,
+            summary.info || 0
+        ];
+        incidentChart.update('none');
+    }
+    
+    // Update session activity chart with new data point
+    if (sessionActivityChart && data.session_stats) {
+        const now = new Date();
+        const timeLabel = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const labels = sessionActivityChart.data.labels;
+        const dataPoints = sessionActivityChart.data.datasets[0].data;
+        
+        // Add new data point
+        labels.push(timeLabel);
+        dataPoints.push(data.session_stats.active_sessions || 0);
+        
+        // Keep only last 25 data points
+        if (labels.length > 25) {
+            labels.shift();
+            dataPoints.shift();
+        }
+        
+        sessionActivityChart.update('none');
+    }
+}
+
+// Update chart timeframe
+function updateChartTimeframe(timeframe) {
+    chartTimeframe = timeframe;
+    document.querySelectorAll('.btn-group button').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+}
+
+// Chat functionality
+let chatMessages = [];
+
+function sendChatMessage(event) {
+    event.preventDefault();
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    
+    if (!message) return;
+    
+    const user = '{{ user.get_full_name|default:user.username|escapejs }}';
+    const timestamp = new Date().toLocaleTimeString();
+    
+    addChatMessage(user, message, timestamp);
+    input.value = '';
+    
+    chatMessages.push({
+        user: user,
+        message: message,
+        timestamp: timestamp
+    });
+    
+    const chatContainer = document.getElementById('chatMessages');
+    if (chatContainer) {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+}
+
+function addChatMessage(user, message, timestamp) {
+    const chatContainer = document.getElementById('chatMessages');
+    if (!chatContainer) return;
+    
+    const emptyState = chatContainer.querySelector('.text-center');
+    if (emptyState) {
+        emptyState.remove();
+    }
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'mb-3';
+    messageDiv.innerHTML = `
+        <div class="d-flex align-items-start gap-2">
+            <div class="avatar-circle bg-primary text-white" style="flex-shrink: 0;">
+                ${user.charAt(0).toUpperCase()}
+            </div>
+            <div class="flex-grow-1">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <strong class="small">${user}</strong>
+                    <small class="text-muted">${timestamp}</small>
+                </div>
+                <div class="bg-white p-2 rounded border">
+                    ${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+                </div>
+            </div>
+        </div>
+    `;
+    
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+function clearChat() {
+    if (!confirm('Clear all chat messages?')) return;
+    
+    const chatContainer = document.getElementById('chatMessages');
+    if (chatContainer) {
+        chatContainer.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-chat-left-text" style="font-size: 2rem;"></i>
+                <p class="mt-2 mb-0">No messages yet. Start the conversation!</p>
+            </div>
+        `;
+    }
+    chatMessages = [];
+}
+
+// Integrate chart updates with existing dashboard refresh
+const originalUpdateDashboard = window.updateDashboard;
+window.updateDashboard = function(data) {
+    if (originalUpdateDashboard) {
+        originalUpdateDashboard(data);
+    }
+    // Only update charts if they're already initialized
+    if (systemMetricsChart && incidentChart && sessionActivityChart) {
+        updateCharts(data);
+    }
+};
+
+function logoutSession(sessionKey, username, buttonElement) {
+    if (!confirm(`Logout session for ${username}?`)) {
+        return;
+    }
+
+    const btn = buttonElement;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Working...';
+
+    fetch(`/hms/admin/sessions/${sessionKey}/logout/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || getCsrfToken() || '',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message || 'Session terminated', 'success');
+            const row = btn.closest('.list-group-item');
+            if (row) {
+                row.remove();
+            }
+        } else {
+            alert(data.error || 'Unable to logout session');
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    })
+    .catch(() => {
+        alert('Unable to logout session. Try again.');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    });
+}
+
+function logoutUser(userId, username, buttonElement) {
+    if (!confirm(`Logout all sessions for ${username}?`)) {
+        return;
+    }
+
+    const btn = buttonElement;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Working...';
+
+    fetch(`/hms/admin/users/${userId}/logout/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || (typeof getCsrfToken === 'function' ? getCsrfToken() : ''),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message || 'User logged out', 'success');
+        } else {
+            alert(data.error || 'Unable to logout user');
+        }
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    })
+    .catch(() => {
+        alert('Unable to logout user. Try again.');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    });
+}
+
+function blockUser(userId, username, buttonElement) {
+    if (!confirm(`Block ${username}? They will be logged out immediately.`)) {
+        return;
+    }
+
+    const btn = buttonElement;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Blocking...';
+
+    fetch(`/hms/admin/users/${userId}/block/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || (typeof getCsrfToken === 'function' ? getCsrfToken() : ''),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message || 'User blocked', 'warning');
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            alert(data.error || 'Unable to block user');
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    })
+    .catch(() => {
+        alert('Unable to block user. Try again.');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    });
+}
+
+function unblockUser(userId, username, buttonElement) {
+    if (!confirm(`Unblock ${username}? They will regain access immediately.`)) {
+        return;
+    }
+
+    const btn = buttonElement;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Unblocking...';
+
+    fetch(`/hms/admin/users/${userId}/unblock/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': (window.getCsrfToken && window.getCsrfToken()) || (typeof getCsrfToken === 'function' ? getCsrfToken() : ''),
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message || 'User unblocked', 'success');
+            const row = btn.closest('.list-group-item');
+            if (row) {
+                row.remove();
+            }
+        } else {
+            alert(data.error || 'Unable to unblock user');
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+    })
+    .catch(() => {
+        alert('Unable to unblock user. Try again.');
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    });
+}
+
+function showNotification(message, type) {
+    const el = document.createElement('div');
+    el.className = `alert alert-${type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info'} alert-dismissible fade show`;
+    el.style.position = 'fixed';
+    el.style.top = '20px';
+    el.style.right = '20px';
+    el.style.zIndex = '9999';
+    el.innerHTML = `
+        <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'}-fill me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 5000);
+}
+
+function showResetPasswordModal(userId, username) {
+    fetch(`/hms/admin/users/${userId}/password-form/`)
+        .then(response => response.text())
+        .then(html => {
+            // Remove existing modal if present
+            const existingModal = document.getElementById('resetPasswordModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Add new modal to body
+            const modalContainer = document.createElement('div');
+            modalContainer.innerHTML = html;
+            document.body.appendChild(modalContainer);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('resetPasswordModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error loading password reset form:', error);
+            alert('Error loading password reset form. Please try again.');
+        });
+}
+
+function showCreateUserModal() {
+    fetch('{% url "hospital:create_user" %}')
+        .then(response => response.text())
+        .then(html => {
+            // Remove existing modal if present
+            const existingModal = document.getElementById('createUserModal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+            
+            // Parse HTML and extract scripts
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const modalElement = doc.querySelector('#createUserModal');
+            const scripts = doc.querySelectorAll('script');
+            
+            // Add modal to body
+            if (modalElement) {
+                document.body.appendChild(modalElement);
+            }
+            
+            // Execute scripts
+            scripts.forEach(oldScript => {
+                const newScript = document.createElement('script');
+                Array.from(oldScript.attributes).forEach(attr => {
+                    newScript.setAttribute(attr.name, attr.value);
+                });
+                newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                document.body.appendChild(newScript);
+            });
+            
+            // Initialize staff fields visibility after modal is added to DOM
+            setTimeout(function() {
+                const createStaffCheckbox = document.getElementById('id_create_staff_profile');
+                if (createStaffCheckbox) {
+                    // Define toggle function if not already defined
+                    if (typeof window.toggleStaffFields !== 'function') {
+                        window.toggleStaffFields = function(checked) {
+                            const departmentField = document.getElementById('staffDepartmentField');
+                            const professionField = document.getElementById('staffProfessionField');
+                            const departmentInput = document.getElementById('id_department');
+                            const professionInput = document.getElementById('id_profession');
+                            
+                            if (checked) {
+                                if (departmentField) {
+                                    departmentField.style.display = '';
+                                    departmentField.classList.remove('d-none');
+                                }
+                                if (professionField) {
+                                    professionField.style.display = '';
+                                    professionField.classList.remove('d-none');
+                                }
+                                if (departmentInput) {
+                                    departmentInput.required = true;
+                                    departmentInput.setAttribute('required', 'required');
+                                }
+                                if (professionInput) {
+                                    professionInput.required = true;
+                                    professionInput.setAttribute('required', 'required');
+                                }
+                            } else {
+                                if (departmentField) {
+                                    departmentField.style.display = 'none';
+                                    departmentField.classList.add('d-none');
+                                }
+                                if (professionField) {
+                                    professionField.style.display = 'none';
+                                    professionField.classList.add('d-none');
+                                }
+                                if (departmentInput) {
+                                    departmentInput.required = false;
+                                    departmentInput.removeAttribute('required');
+                                    departmentInput.value = '';
+                                }
+                                if (professionInput) {
+                                    professionInput.required = false;
+                                    professionInput.removeAttribute('required');
+                                    professionInput.value = '';
+                                }
+                            }
+                        };
+                    }
+                    
+                    // Set initial state
+                    window.toggleStaffFields(createStaffCheckbox.checked);
+                    
+                    // Attach event listener
+                    createStaffCheckbox.addEventListener('change', function() {
+                        window.toggleStaffFields(this.checked);
+                    });
+                }
+            }, 50);
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('createUserModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error loading create user form:', error);
+            alert('Error loading create user form. Please try again.');
+        });
+}
+</script>
+
+{% endblock %}
+

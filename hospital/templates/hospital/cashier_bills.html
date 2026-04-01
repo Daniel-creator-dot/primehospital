@@ -1,0 +1,274 @@
+{% extends 'hospital/base.html' %}
+{% load static humanize %}
+
+{% block title %}Bills - Cashier - HMS{% endblock %}
+{% block page_title %}All Bills{% endblock %}
+{% block page_subtitle %}View and manage patient bills{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bill-card {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        border-left: 4px solid;
+        transition: all 0.2s;
+    }
+    
+    .bill-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    
+    .bill-card.issued {
+        border-left-color: var(--warning);
+    }
+    
+    .bill-card.partially_paid {
+        border-left-color: var(--info);
+    }
+    
+    .bill-card.paid {
+        border-left-color: var(--success);
+    }
+    
+    .bill-card.cancelled {
+        border-left-color: var(--gray);
+        opacity: 0.7;
+    }
+    
+    .filter-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    
+    .filter-tab {
+        padding: 8px 16px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s;
+        border: 2px solid transparent;
+        cursor: pointer;
+        background: inherit;
+        font-size: inherit;
+    }
+    button.filter-tab {
+        font-family: inherit;
+        margin: 0;
+    }
+    
+    .filter-tab.active {
+        background: var(--primary);
+        color: white;
+    }
+    
+    .filter-tab:not(.active) {
+        background: var(--light);
+        color: var(--dark);
+        border-color: var(--border);
+    }
+    
+    .filter-tab:not(.active):hover {
+        background: var(--border);
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        border: 1px solid var(--border);
+    }
+    
+    .stat-value {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 8px 0;
+    }
+    
+    .stat-label {
+        font-size: 13px;
+        color: var(--gray);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-label">Issued Bills</div>
+            <div class="stat-value" style="color: var(--warning);">{{ total_issued }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-label">Paid Bills</div>
+            <div class="stat-value" style="color: var(--success);">{{ total_paid }}</div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="stat-card">
+            <div class="stat-label">Outstanding Amount</div>
+            <div class="stat-value" style="color: var(--danger);">GHS {{ total_outstanding|floatformat:2|intcomma }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters and Search -->
+<div class="modern-card mb-4">
+    <form method="get" action="{% url 'hospital:cashier_bills' %}">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label for="searchQuery" class="form-label small text-muted mb-1">Search</label>
+                <input type="text" id="searchQuery" name="q" value="{{ request.GET.q }}" 
+                    class="form-control form-control-modern" placeholder="Bill #, patient name, MRN...">
+            </div>
+            <div class="col-md-2">
+                <label for="filterDate" class="form-label small text-muted mb-1">Date</label>
+                <input type="date" id="filterDate" name="date" value="{{ filter_date }}" class="form-control form-control-modern">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary-modern w-100">
+                    <i class="bi bi-search"></i> Search
+                </button>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small text-muted mb-1 d-block">Status</label>
+                <div class="filter-tabs">
+                    <button type="submit" name="status" value="" class="filter-tab {% if not status_filter %}active{% endif %}">All</button>
+                    <button type="submit" name="status" value="issued" class="filter-tab {% if status_filter == 'issued' %}active{% endif %}">Issued</button>
+                    <button type="submit" name="status" value="partially_paid" class="filter-tab {% if status_filter == 'partially_paid' %}active{% endif %}">Partially Paid</button>
+                    <button type="submit" name="status" value="paid" class="filter-tab {% if status_filter == 'paid' %}active{% endif %}">Paid</button>
+                </div>
+            </div>
+        </div>
+        {% if request.GET.q or filter_date or status_filter %}
+        <div class="mt-2">
+            <a href="{% url 'hospital:cashier_bills' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-x-lg"></i> Clear Filters
+            </a>
+        </div>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Bills List (grouped by patient) -->
+<div class="modern-card">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 style="font-weight: 600; margin: 0;">
+            {% if status_filter %}
+                {{ status_filter|capfirst }} Bills
+            {% else %}
+                All Bills
+            {% endif %}
+            <span class="badge-modern badge-info ms-2">{{ bills_count }} receipt{{ bills_count|pluralize }}</span>
+        </h5>
+        <a href="{% url 'hospital:cashier_dashboard' %}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+    
+    {% if bills_by_patient %}
+        {% for group in bills_by_patient %}
+        <div class="border rounded-3 mb-4" style="border-color: var(--border) !important; overflow: hidden;">
+            <!-- Patient header -->
+            <div class="p-3 d-flex justify-content-between align-items-center flex-wrap gap-2" style="background: var(--light); border-bottom: 1px solid var(--border);">
+                <div>
+                    <h6 class="mb-1 fw-bold">
+                        <a href="{% url 'hospital:patient_detail' group.patient.pk %}" class="text-decoration-none text-dark">
+                            {{ group.patient.full_name }}
+                        </a>
+                    </h6>
+                    <span class="text-muted small">MRN: {{ group.patient.mrn }}</span>
+                    <span class="badge bg-primary ms-2">{{ group.receipts|length }} receipt{{ group.receipts|length|pluralize }}</span>
+                </div>
+                <div>
+                    <strong class="text-success">Total: GHS {{ group.total_amount|floatformat:2|intcomma }}</strong>
+                    <a href="{% url 'hospital:cashier_patient_invoices' group.patient.pk %}" class="btn btn-sm btn-outline-primary ms-2">
+                        <i class="bi bi-receipt"></i> Patient Invoices
+                    </a>
+                </div>
+            </div>
+            <!-- Receipts under this person -->
+            <div class="p-2">
+                {% for bill in group.receipts %}
+                <div class="bill-card paid ms-2 me-2 mb-2">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div style="font-size: 13px; color: var(--gray); margin-bottom: 4px;">
+                                <i class="bi bi-receipt"></i> Receipt #{{ bill.receipt_number }}
+                                {% if bill.invoice %}
+                                | Invoice: {{ bill.invoice.invoice_number }}
+                                {% endif %}
+                            </div>
+                            <div style="font-size: 12px; color: var(--gray);">
+                                <i class="bi bi-calendar"></i> Paid: {{ bill.receipt_date|date:"M d, Y H:i" }}
+                                {% if bill.service_type %}
+                                | <span class="badge-modern badge-info">{{ bill.get_service_type_display }}</span>
+                                {% endif %}
+                                {% if bill.payment_method == 'cash' %}
+                                | <span class="badge-modern badge-warning">Cash</span>
+                                {% elif bill.payment_method == 'card' %}
+                                | <span class="badge-modern badge-info">Card</span>
+                                {% elif bill.payment_method == 'mobile_money' %}
+                                | <span class="badge-modern badge-success">Mobile Money</span>
+                                {% else %}
+                                | <span class="badge-modern badge-secondary">{{ bill.get_payment_method_display }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <div style="font-size: 16px; font-weight: 600; color: var(--success);">
+                                GHS {{ bill.amount_paid|floatformat:2|intcomma }}
+                            </div>
+                            {% if bill.received_by %}
+                            <div style="font-size: 11px; color: var(--gray);">
+                                By: {{ bill.received_by.get_full_name|default:bill.received_by.username }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3 text-end">
+                            <span class="badge-modern badge-success me-2">
+                                <i class="bi bi-check-circle"></i> PAID
+                            </span>
+                            <a href="{% url 'hospital:receipt_print' bill.pk %}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-printer"></i> Print
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        
+        {% if bills_count >= 500 %}
+        <div class="alert alert-info mt-3">
+            <i class="bi bi-info-circle"></i> Showing first 500 receipts (grouped by patient). Use search and filters to narrow down.
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-receipt" style="font-size: 48px; color: var(--gray); margin-bottom: 16px;"></i>
+            <p class="text-muted">No bills found</p>
+            {% if request.GET.q or status_filter %}
+            <p class="text-muted" style="font-size: 14px;">
+                Try adjusting your search criteria or filters
+            </p>
+            <a href="{% url 'hospital:cashier_bills' %}" class="btn btn-outline-primary mt-2">
+                Clear Filters
+            </a>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+

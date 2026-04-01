@@ -1,0 +1,18 @@
+{% extends 'hospital/base.html' %}
+{% load static crispy_forms_tags %}
+
+{% block title %}{{ title }} - HMS{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}{{ staff.user.get_full_name|default:staff.user.username }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-10">
+        {% include 'hospital/includes/performance_snapshot.html' with snapshot=performance_snapshot history=performance_snapshot_history heading="Operational Analytics (Auto-Synced)" %}
+        <div class="modern-card">
+            {% crispy form %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+

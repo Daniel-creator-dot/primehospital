@@ -1,0 +1,185 @@
+{% extends 'hospital/base.html' %}
+{% load static humanize %}
+{% load hospital_extras %}
+
+{% block title %}Invoices - HMS{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        body { background: white !important; }
+        .sidebar, .sidebar-overlay, .topbar, .mobile-menu-toggle { display: none !important; }
+        .main-content { margin-left: 0 !important; width: 100% !important; max-width: 100% !important; }
+        .content-container { max-width: 100% !important; }
+        .no-print { display: none !important; }
+        .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4 no-print">
+    <div>
+        <h1 class="h4 mb-1">Invoices</h1>
+        <p class="text-muted mb-0 small">Manage billing and invoices</p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="btn-group" role="group">
+            <a href="?view=combined{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payer_type_filter %}&payer_type={{ payer_type_filter }}{% endif %}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+               class="btn btn-sm {% if view_mode == 'combined' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                By Patient (Combined)
+            </a>
+            <a href="?view=invoices{% if status_filter %}&status={{ status_filter }}{% endif %}{% if payer_type_filter %}&payer_type={{ payer_type_filter }}{% endif %}{% if request.GET.q %}&q={{ request.GET.q }}{% endif %}"
+               class="btn btn-sm {% if view_mode == 'invoices' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                By Invoice
+            </a>
+        </div>
+        <a href="{% url 'hospital:export_invoices_csv' %}" class="btn btn-success btn-sm">
+            <i class="bi bi-download"></i> Export CSV
+        </a>
+    </div>
+</div>
+
+<form method="get" class="mb-3 row g-2 align-items-end no-print">
+    <input type="hidden" name="view" value="{{ view_mode }}">
+    <div class="col-auto">
+        <label class="form-label small mb-0">Status</label>
+        <select name="status" class="form-select form-select-sm" style="min-width: 110px;">
+            <option value="">All</option>
+            <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>Draft</option>
+            <option value="issued" {% if status_filter == 'issued' %}selected{% endif %}>Issued</option>
+            <option value="paid" {% if status_filter == 'paid' %}selected{% endif %}>Paid</option>
+            <option value="partially_paid" {% if status_filter == 'partially_paid' %}selected{% endif %}>Partial</option>
+            <option value="overdue" {% if status_filter == 'overdue' %}selected{% endif %}>Overdue</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Payer</label>
+        <select name="payer_type" class="form-select form-select-sm" style="min-width: 120px;">
+            <option value="">All</option>
+            <option value="insurance" {% if payer_type_filter == 'insurance' %}selected{% endif %}>Insurance</option>
+            <option value="cash" {% if payer_type_filter == 'cash' %}selected{% endif %}>Cash</option>
+            <option value="corporate" {% if payer_type_filter == 'corporate' %}selected{% endif %}>Corporate</option>
+        </select>
+    </div>
+    <div class="col-auto">
+        <label class="form-label small mb-0">Search</label>
+        <input type="text" name="q" class="form-control form-control-sm" placeholder="{% if payer_type_filter == 'corporate' %}Company, patient or #{% else %}Patient or #{% endif %}" value="{{ request.GET.q|default:'' }}" style="min-width: 140px;">
+    </div>
+    <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+    </div>
+</form>
+
+<!-- Stats -->
+<div class="row g-2 mb-4" id="invoice-list-print-area">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 bg-warning bg-opacity-10 py-2">
+            <div class="card-body py-2">
+                <div class="small text-muted">Revenue</div>
+                <div class="fw-bold">GHS {{ stats.total_revenue|floatformat:0|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 bg-danger bg-opacity-10 py-2">
+            <div class="card-body py-2">
+                <div class="small text-muted">Outstanding</div>
+                <div class="fw-bold text-danger">GHS {{ stats.outstanding_balance|floatformat:0|intcomma }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 bg-success bg-opacity-10 py-2">
+            <div class="card-body py-2">
+                <div class="small text-muted">Paid</div>
+                <div class="fw-bold">{{ stats.paid_invoices }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 bg-primary bg-opacity-10 py-2">
+            <div class="card-body py-2">
+                <div class="small text-muted">Total</div>
+                <div class="fw-bold">{{ stats.total_invoices }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if view_mode == 'combined' %}
+<!-- Combined by Patient: insurance + corporate + cash in one row per patient -->
+<div class="alert alert-info border-0 shadow-sm mb-3 no-print">
+    <i class="bi bi-person-lines-fill me-2"></i>
+    <strong>Combined bills:</strong> One row per patient — all outstanding invoices (Insurance, Corporate, Cash) are combined. Use <strong>View &amp; Waive</strong> to open the full combined bill for a patient and waive items if needed.
+</div>
+{% if patient_rows %}
+{% for row in patient_rows %}
+<div class="card border mb-2 shadow-sm">
+    <div class="card-body py-3">
+        <div class="row align-items-center">
+            <div class="col">
+                <a href="{% url 'hospital:patient_detail' row.patient.pk %}" class="text-decoration-none fw-bold text-dark">
+                    {{ row.patient.full_name }}
+                </a>
+                <span class="text-muted ms-2">MRN: {{ row.patient.mrn }}</span>
+            </div>
+            <div class="col-auto text-end">
+                <span class="text-muted small">{{ row.invoice_count }} invoice{{ row.invoice_count|pluralize }}</span>
+                <span class="fw-bold text-danger ms-2">GHS {{ row.total_balance|floatformat:2|intcomma }}</span>
+                <a href="{% url 'hospital:invoice_combined_patient' row.patient.pk %}" class="btn btn-sm btn-primary ms-2">
+                    View & Waive
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% pagination_enhanced page_obj 25 %}
+{% else %}
+<div class="text-center py-5 text-muted">
+    <i class="bi bi-person-check" style="font-size: 3rem;"></i>
+    <p class="mt-2 mb-0">No patients with outstanding balance</p>
+</div>
+{% endif %}
+
+{% else %}
+<!-- Individual Invoices -->
+{% if invoices %}
+{% for invoice in invoices %}
+<div class="card border mb-2 shadow-sm">
+    <div class="card-body py-3">
+        <div class="row align-items-center">
+            <div class="col">
+                <a href="{% url 'hospital:invoice_detail' invoice.pk %}" class="fw-bold text-dark text-decoration-none">
+                    {{ invoice.invoice_number }}
+                </a>
+                <span class="text-muted ms-2">{{ invoice.patient.full_name }}</span>
+            </div>
+            <div class="col-auto">
+                <span class="badge bg-{% if invoice.status == 'paid' %}success{% elif invoice.status == 'overdue' %}danger{% else %}warning{% endif %}">
+                    {{ invoice.get_status_display }}
+                </span>
+            </div>
+            <div class="col-auto text-end">
+                <span class="text-muted">GHS {{ invoice.total_amount|floatformat:2|intcomma }}</span>
+                {% if invoice.balance > 0 %}
+                <span class="text-danger fw-bold ms-2">GHS {{ invoice.balance|floatformat:2|intcomma }}</span>
+                {% endif %}
+            </div>
+            <div class="col-auto">
+                <a href="{% url 'hospital:invoice_detail' invoice.pk %}" class="btn btn-sm btn-outline-primary">View</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% pagination_enhanced page_obj 25 %}
+{% else %}
+<div class="text-center py-5 text-muted">
+    <i class="bi bi-receipt" style="font-size: 3rem;"></i>
+    <p class="mt-2 mb-0">No invoices found</p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
