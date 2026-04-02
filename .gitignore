@@ -66,7 +66,22 @@ logs/
 *.bak
 *.backup
 
-# Compiled files
+# Docs and non-code artifacts
+*.md
+*.txt
+*.log
+*.dump
+
+# Local and generated artifacts
+backups/
+venv/
+env/
+ENV/
+.venv
+media/
+static/
+staticfiles/
+logs/
 __pycache__/
 *.pyc
 
@@ -75,7 +90,10 @@ secret_key.txt
 
 # Database backups
 *.sql
-*.dump
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.zip
 
 # Node modules (if using frontend build)
 node_modules/
@@ -86,12 +104,58 @@ npm-debug.log
 *.key
 *.crt
 
-# OS files
-Thumbs.db
-.DS_Store
+# Status and task tracking files
+✅_*
+⚡_*
+⭐_*
+🚀_*
+🚨_*
+🚩_*
+📊_*
+📈_*
+🎉_*
+🎊_*
+✨_*
+💡_*
+🔗_*
+🔥_*
+🌀_*
+✅*
+⚡*
+⭐*
+🚀*
+🚨*
+🚩*
+📊*
+📈*
+🎉*
+🎊*
+✨*
+💡*
+🔗*
+🔥*
+🌀*
+*SUMMARY.md
+*GUIDE.md
+*FIXED.md
+*COMPLETE.md
+*COMPLETE.txt
+*FIXED.txt
+*SUMMARY.txt
+*GUIDE.txt
+*PATCH.txt
+*OUTPUT.txt
+import_log*.txt
+server_output.txt
+startup_log.txt
+test_output*.txt
+command_output.txt
+packinfo.txt
+render_env_file.txt
 
-# Large data files
-import/
+# Local backups and exported data
 backups/
-media/
-staticfiles/
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.zip
