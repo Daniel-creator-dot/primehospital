@@ -34,7 +34,7 @@ djangorestframework-simplejwt==5.3.0
 django-guardian==2.4.0
 
 # File Handling
-Pillow==10.1.0
+Pillow>=10.3.0
 python-magic==0.4.27
 openpyxl==3.1.2
 
