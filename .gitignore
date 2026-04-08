@@ -69,6 +69,7 @@ logs/
 # Docs and non-code artifacts
 *.md
 *.txt
+!runtime.txt
 *.log
 *.dump
 
